@@ -1,0 +1,30 @@
+[project]
+name = "airwise"
+version = "0.1.0"
+description = "GenAI assistant for low-emission routines during severe winter smog in India"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110",
+    "httpx>=0.27",
+    "openai>=1.40",
+    "pydantic>=2.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "uvicorn>=0.29",
+    "hypothesis>=6.100",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["airwise*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
