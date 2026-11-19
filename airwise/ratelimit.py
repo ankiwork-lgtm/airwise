@@ -1,10 +1,11 @@
 """In-memory fixed-window rate limiter with an injectable clock."""
+
 from __future__ import annotations
 
 import math
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 CLEANUP_THRESHOLD = 10_000
 

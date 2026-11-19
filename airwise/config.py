@@ -1,4 +1,5 @@
 """Constants and environment readers. Credentials come only from os.environ."""
+
 from __future__ import annotations
 
 import os
@@ -14,6 +15,7 @@ REQUEST_DEADLINE_S = 28.0  # below Vercel maxDuration (30)
 LLM_MIN_BUDGET_S = 2.0  # skip the LLM call if less time remains
 MAX_BODY_BYTES = 65_536
 PLAN_LIMIT, CHAT_LIMIT, WINDOW_S = 10, 30, 60
+AQI_LIMIT = 30
 ESTIMATED_PM25, ESTIMATED_PM10 = 150.0, 260.0  # typical winter values
 
 DEFAULT_LLM_MODEL = "claude-haiku-5-5"

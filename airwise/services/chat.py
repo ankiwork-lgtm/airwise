@@ -1,11 +1,10 @@
 """Chat_Service: stateless follow-up answers with a deterministic scope guard."""
+
 from __future__ import annotations
 
 import logging
 import re
 from typing import Any
-
-from pydantic import ValidationError
 
 from airwise.config import Deadline, anthropic_api_key
 from airwise.models import ChatReply, ChatRequest, LLMChat
@@ -21,9 +20,7 @@ NOT_MEDICAL_ADVICE_NOTE = (
     "This is general information and not medical advice. "
     "Please consult a qualified doctor for health concerns."
 )
-CHAT_FAILURE_MESSAGE = (
-    "Sorry, an answer is unavailable right now. Please try again later."
-)
+CHAT_FAILURE_MESSAGE = "Sorry, an answer is unavailable right now. Please try again later."
 SCOPE_DECLINE_REPLY = (
     "I can't diagnose conditions, recommend treatment or medication, or declare an official "
     "GRAP stage. Please consult a doctor or the official CAQM/CPCB notices for those."
@@ -51,12 +48,14 @@ CHAT_INSTRUCTIONS = (
 
 _PATTERNS: dict[str, re.Pattern[str]] = {
     "diagnosis": re.compile(
-        r"\b(diagnos\w*|do i have|do we have|does (?:he|she|my \w+) have|what(?:'s| is) wrong with me"
+        r"\b(diagnos\w*|do i have|do we have|does (?:he|she|my \w+) have"
+        r"|what(?:'s| is) wrong with me"
         r"|is it (?:asthma|copd|bronchitis|pneumonia))\b",
         re.IGNORECASE,
     ),
     "treatment": re.compile(
-        r"\b(treat(?:ment|ments|ing)?|cure|therapy|how (?:do|can|should) i (?:treat|cure)|remed(?:y|ies))\b",
+        r"\b(treat(?:ment|ments|ing)?|cure|therapy|how (?:do|can|should) i (?:treat|cure)"
+        r"|remed(?:y|ies))\b",
         re.IGNORECASE,
     ),
     "medication": re.compile(
@@ -67,7 +66,8 @@ _PATTERNS: dict[str, re.Pattern[str]] = {
     "grap": re.compile(
         r"\b(?:(?:declare|declared|declaring|announce|announced|invoke|invoked|impose|imposed|"
         r"official\w*|confirm\w*|enforce\w*)\b[^.?!]{0,60}\bgrap\b"
-        r"|grap\b[^.?!]{0,60}\b(?:declared|announced|invoked|imposed|official\w*|confirmed|in force|enforced))",
+        r"|grap\b[^.?!]{0,60}\b(?:declared|announced|invoked|imposed|official\w*|confirmed"
+        r"|in force|enforced))",
         re.IGNORECASE,
     ),
 }
@@ -114,8 +114,17 @@ async def answer(req: ChatRequest, *, llm: LLMClient, deadline: Deadline) -> Cha
             return ChatReply(reply=OFF_TOPIC_REPLY, failed=False)
         reply = parsed.reply
         if parsed.discusses_health:
-            reply = f"{reply[: 2000 - len(NOT_MEDICAL_ADVICE_NOTE) - 1].rstrip()} {NOT_MEDICAL_ADVICE_NOTE}"
+            head = reply[: 2000 - len(NOT_MEDICAL_ADVICE_NOTE) - 1].rstrip()
+            reply = f"{head} {NOT_MEDICAL_ADVICE_NOTE}"
         return ChatReply(reply=reply, failed=False)
-    except (ValidationError, Exception) as exc:  # any LLM error, timeout, or invalid output
-        logger.warning("chat LLM call failed: %s: %s", type(exc).__name__, exc)
+    except Exception as exc:  # deliberately broad: any LLM error, timeout, or invalid output
+        # Log only the class and upstream status: the message can echo provider response text.
+        error_type = type(exc).__name__
+        upstream_status = getattr(exc, "status_code", None)
+        logger.warning(
+            "chat LLM call failed: error_type=%s upstream_status=%s",
+            error_type,
+            upstream_status,
+            extra={"error_type": error_type, "upstream_status": upstream_status},
+        )
         return _failure()

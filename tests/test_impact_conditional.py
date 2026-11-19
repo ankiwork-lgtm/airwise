@@ -1,4 +1,5 @@
 """Property tests for Impact_Engine conditional rows and combine bounds."""
+
 from __future__ import annotations
 
 from hypothesis import given, settings

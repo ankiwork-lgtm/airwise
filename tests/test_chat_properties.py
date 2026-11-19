@@ -1,4 +1,5 @@
 """Property tests for Chat_Service replies and scope guard."""
+
 from __future__ import annotations
 
 import asyncio
@@ -103,9 +104,7 @@ _TRIGGERS = [
     "GRAP officially declared",
 ]
 _case_fns = st.sampled_from([str.lower, str.upper, str.title, str.swapcase])
-_surround = st.text(
-    alphabet=st.characters(blacklist_categories=("Cs", "Cc")), max_size=100
-)
+_surround = st.text(alphabet=st.characters(blacklist_categories=("Cs", "Cc")), max_size=100)
 
 
 @st.composite

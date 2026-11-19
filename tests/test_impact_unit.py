@@ -1,4 +1,5 @@
 """Unit tests for the Impact_Engine (Requirements 5.11, 5.12, 13.1)."""
+
 import pytest
 
 from airwise.errors import InvalidInput
@@ -60,7 +61,9 @@ def test_worst_case_profile_gives_all_nine_rows():
 
 
 def test_same_inputs_give_same_output():
-    assert compute_impact(WORST_PROFILE, _reading(400)) == compute_impact(WORST_PROFILE, _reading(400))
+    assert compute_impact(WORST_PROFILE, _reading(400)) == compute_impact(
+        WORST_PROFILE, _reading(400)
+    )
 
 
 @pytest.mark.parametrize(
@@ -70,10 +73,20 @@ def test_same_inputs_give_same_output():
         ({"city": "Delhi"}, _reading(50), "profile"),
         (CLEAN_PROFILE, None, "reading"),
         (CLEAN_PROFILE, {"aqi": 50}, "reading"),
-        (CLEAN_PROFILE, AirReading.model_construct(**{**_reading(50).model_dump(), "aqi": 9999}), "aqi"),
-        (CLEAN_PROFILE, AirReading.model_construct(**{**_reading(50).model_dump(), "aqi": -1}), "aqi"),
         (
-            HouseholdProfile.model_construct(**{**CLEAN_PROFILE.model_dump(), "commute": "teleport"}),
+            CLEAN_PROFILE,
+            AirReading.model_construct(**{**_reading(50).model_dump(), "aqi": 9999}),
+            "aqi",
+        ),
+        (
+            CLEAN_PROFILE,
+            AirReading.model_construct(**{**_reading(50).model_dump(), "aqi": -1}),
+            "aqi",
+        ),
+        (
+            HouseholdProfile.model_construct(
+                **{**CLEAN_PROFILE.model_dump(), "commute": "teleport"}
+            ),
             _reading(50),
             "commute",
         ),

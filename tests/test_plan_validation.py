@@ -1,7 +1,9 @@
 """Validation and endpoint tests for POST /api/plan (Property 7 for the plan route)."""
+
 import json
 
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from airwise.services.llm import PLAN_JSON_SCHEMA
 from tests.strategies import profiles
@@ -76,8 +78,14 @@ def test_valid_llm_response_has_full_single_response_shape(monkeypatch):
     assert plan["fallback"] is False
     assert plan["estimated"] is False
     assert set(plan) == {
-        "routine", "indoor_hacks", "swaps", "vulnerable_note",
-        "impact_table", "exposure_score", "fallback", "estimated",
+        "routine",
+        "indoor_hacks",
+        "swaps",
+        "vulnerable_note",
+        "impact_table",
+        "exposure_score",
+        "fallback",
+        "estimated",
     }
     assert set(plan["routine"]) == {"morning", "commute", "midday", "evening"}
     assert plan["impact_table"], "profile should yield impact rows"
@@ -106,8 +114,12 @@ def test_llm_request_carries_table_ids_and_json_schema_format(monkeypatch):
 
 
 def test_anthropic_client_sends_forced_tool_with_plan_schema(monkeypatch):
-    """Through the real AnthropicClient (HTTP stubbed), the request forces a tool whose input_schema is the plan schema."""
+    """Through the real AnthropicClient (HTTP stubbed), the request forces a tool.
+
+    The tool's input_schema must be the plan schema.
+    """
     import httpx
+
     from airwise.services import llm as llm_module
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
@@ -120,7 +132,12 @@ def test_anthropic_client_sends_forced_tool_with_plan_schema(monkeypatch):
         seen["url"] = str(request.url)
         data = await inner.complete_json(user=body["messages"][0]["content"])
         return httpx.Response(
-            200, json={"content": [{"type": "tool_use", "name": body["tool_choice"]["name"], "input": data}]}
+            200,
+            json={
+                "content": [
+                    {"type": "tool_use", "name": body["tool_choice"]["name"], "input": data}
+                ]
+            },
         )
 
     monkeypatch.setattr(llm_module, "_TRANSPORT", httpx.MockTransport(handler))
@@ -176,7 +193,11 @@ _bad_city = st.one_of(
     st.integers(),
     st.lists(st.integers(), max_size=2),
 )
-_bad_bool = st.one_of(st.just(MARKER), st.lists(st.integers(), max_size=2), st.dictionaries(st.just("a"), st.integers(), max_size=1))
+_bad_bool = st.one_of(
+    st.just(MARKER),
+    st.lists(st.integers(), max_size=2),
+    st.dictionaries(st.just("a"), st.integers(), max_size=1),
+)
 _bad_enum = st.text(min_size=1, max_size=20).map(lambda s: MARKER + s)
 _bad_lat = st.one_of(
     st.floats(min_value=90.0001, max_value=1e6, **_FINITE),
@@ -193,6 +214,7 @@ _extra_key = st.text(alphabet="abcdefghij_", min_size=3, max_size=10).filter(
 _PROFILE_BOOLS = ["kids", "elderly", "respiratory", "has_purifier"]
 _PROFILE_ENUMS = ["commute", "cooking_fuel", "heating", "ventilation"]
 
+
 # Each case produces (payload, expected field names that must appear in the error).
 @st.composite
 def invalid_payloads(draw):
@@ -200,7 +222,18 @@ def invalid_payloads(draw):
     payload: dict = {"profile": profile}
     kind = draw(
         st.sampled_from(
-            ["city", "bool", "enum", "missing", "profile_extra", "top_extra", "lat", "lon", "lat_only", "lon_only"]
+            [
+                "city",
+                "bool",
+                "enum",
+                "missing",
+                "profile_extra",
+                "top_extra",
+                "lat",
+                "lon",
+                "lat_only",
+                "lon_only",
+            ]
         )
     )
     if kind == "city":

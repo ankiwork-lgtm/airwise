@@ -11,7 +11,13 @@ from airwise.services.llm import LLMUnavailable
 from airwise.services.plan import generate_plan
 from tests.strategies import profiles, readings
 
-_FACTORS = ["stubble_burning", "firecrackers", "biomass_cooking_heating", "two_wheelers", "metro_use"]
+_FACTORS = [
+    "stubble_burning",
+    "firecrackers",
+    "biomass_cooking_heating",
+    "two_wheelers",
+    "metro_use",
+]
 _OUTCOMES = ["valid", "unparsable", "schema_invalid", "error", "timeout"]
 _KEYS = ["set", "empty", "unset"]
 
@@ -38,7 +44,9 @@ def _llm_item(impact_ids):
         {
             "text": _text,
             "why_it_matters": _text,
-            "impact_id": st.none() | (st.sampled_from(impact_ids) if impact_ids else st.nothing()) | st.text(max_size=20),
+            "impact_id": st.none()
+            | (st.sampled_from(impact_ids) if impact_ids else st.nothing())
+            | st.text(max_size=20),
             "context_factor": st.none() | st.sampled_from(_FACTORS),
         }
     )
@@ -60,7 +68,9 @@ def _llm_plan(impact_ids):
     )
 
 
-_schema_breakers = st.sampled_from(["missing_key", "extra_key", "empty_list", "too_many", "wrong_type"])
+_schema_breakers = st.sampled_from(
+    ["missing_key", "extra_key", "empty_list", "too_many", "wrong_type"]
+)
 
 
 def _break(plan: dict, how: str) -> dict:
@@ -144,7 +154,9 @@ def test_llm_outcomes_map_to_valid_plan_with_at_most_one_call(data, profile, rea
 
     # Figures are server-owned: copied from the table or absent.
     by_id = {r.id: r for r in impact.rows}
-    all_items = list(plan.routine.morning + plan.routine.commute + plan.routine.midday + plan.routine.evening)
+    all_items = list(
+        plan.routine.morning + plan.routine.commute + plan.routine.midday + plan.routine.evening
+    )
     all_items += plan.indoor_hacks + plan.swaps
     for item in all_items:
         if item.impact is None:

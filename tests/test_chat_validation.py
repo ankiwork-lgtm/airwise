@@ -1,10 +1,12 @@
 """Validation and endpoint tests for POST /api/chat (Properties 7 and 8 for the chat route)."""
+
 from __future__ import annotations
 
 import copy
 
 from fastapi.testclient import TestClient
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from airwise.main import create_app, get_llm_client
 from airwise.services.chat import (
@@ -134,7 +136,9 @@ def test_llm_timeout_returns_failure_message(monkeypatch):
 
 def test_off_topic_message_gets_fixed_reply(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    llm = RecordingLLM({"reply": "Paris is the capital.", "on_topic": False, "discusses_health": False})
+    llm = RecordingLLM(
+        {"reply": "Paris is the capital.", "on_topic": False, "discusses_health": False}
+    )
     with _client(llm) as c:
         r = c.post("/api/chat", json=valid_payload("What is the capital of France?"))
     assert r.status_code == 200
@@ -273,8 +277,13 @@ def invalid_chat_payloads(draw):
         key = draw(st.sampled_from(["indoor_hacks", "swaps", "impact_table"]))
         if key == "impact_table":
             row = {
-                "id": "a", "action": "a", "basis": "b", "source_note": "s",
-                "exposure_reduction_pct": 1.0, "co2_kg_per_day": 1.0, "approximate": True,
+                "id": "a",
+                "action": "a",
+                "basis": "b",
+                "source_note": "s",
+                "exposure_reduction_pct": 1.0,
+                "co2_kg_per_day": 1.0,
+                "approximate": True,
             }
             p["plan"][key] = [row] * draw(st.integers(51, 100))
         else:
@@ -289,10 +298,12 @@ def invalid_chat_payloads(draw):
         p["plan"][k] = 1
         return p, [f"plan.{k}"]
     if kind == "plan_text_long":
-        p["plan"]["indoor_hacks"] = [{"text": "t" * draw(st.integers(301, 600)), "why_it_matters": "w"}]
+        p["plan"]["indoor_hacks"] = [
+            {"text": "t" * draw(st.integers(301, 600)), "why_it_matters": "w"}
+        ]
         return p, ["plan.indoor_hacks.0.text"]
     if kind == "reading_aqi":
-        p["reading"]["aqi"] = draw(st.one_of(st.integers(501, 10**6), st.integers(-10**6, -1)))
+        p["reading"]["aqi"] = draw(st.one_of(st.integers(501, 10**6), st.integers(-(10**6), -1)))
         return p, ["reading.aqi"]
     if kind == "reading_band":
         p["reading"]["band"] = draw(_bad_enum)
@@ -301,7 +312,11 @@ def invalid_chat_payloads(draw):
         p["reading"]["latitude"] = draw(st.floats(90.0001, 1e6, allow_nan=False))
         return p, ["reading.latitude"]
     if kind == "reading_missing":
-        f = draw(st.sampled_from(["location_name", "latitude", "longitude", "aqi", "band", "grap_stage", "source"]))
+        f = draw(
+            st.sampled_from(
+                ["location_name", "latitude", "longitude", "aqi", "band", "grap_stage", "source"]
+            )
+        )
         del p["reading"][f]
         return p, [f"reading.{f}"]
     if kind == "profile_enum":

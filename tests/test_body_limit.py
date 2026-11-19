@@ -1,8 +1,10 @@
 """Property 19: Body size limit."""
+
 import asyncio
 import json
 
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from airwise.config import MAX_BODY_BYTES
 from airwise.middleware import BodySizeLimitMiddleware

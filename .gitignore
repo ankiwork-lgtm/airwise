@@ -9,3 +9,8 @@ __pycache__/
 venv/
 env/
 .hypothesis/
+
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml

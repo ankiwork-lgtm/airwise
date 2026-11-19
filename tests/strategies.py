@@ -1,4 +1,5 @@
 """Shared Hypothesis strategies."""
+
 from __future__ import annotations
 
 from hypothesis import strategies as st
@@ -6,10 +7,7 @@ from hypothesis import strategies as st
 from airwise.models import AirReading, HouseholdProfile
 from airwise.services.aqi import band_for, compute_aqi, grap_for
 
-_trimmed_text = (
-    st.text(min_size=1, max_size=100)
-    .filter(lambda s: s == s.strip() and len(s) > 0)
-)
+_trimmed_text = st.text(min_size=1, max_size=100).filter(lambda s: s == s.strip() and len(s) > 0)
 
 
 @st.composite
@@ -19,7 +17,9 @@ def profiles(draw) -> HouseholdProfile:
         kids=draw(st.booleans()),
         elderly=draw(st.booleans()),
         respiratory=draw(st.booleans()),
-        commute=draw(st.sampled_from(["car", "two_wheeler", "bus_metro", "walk_cycle", "work_from_home"])),
+        commute=draw(
+            st.sampled_from(["car", "two_wheeler", "bus_metro", "walk_cycle", "work_from_home"])
+        ),
         cooking_fuel=draw(st.sampled_from(["lpg", "png", "induction", "biomass"])),
         heating=draw(st.sampled_from(["none", "electric", "biomass_burning"])),
         has_purifier=draw(st.booleans()),

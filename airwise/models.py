@@ -1,4 +1,5 @@
 """Pydantic data models for AirWise."""
+
 from __future__ import annotations
 
 from typing import Literal
@@ -52,10 +53,17 @@ class ImpactFigures(BaseModel):
 
 
 class ImpactRow(ImpactFigures):
-    id: str = Field(min_length=1, max_length=2000)
+    id: str = Field(min_length=1, max_length=64)
     action: str = Field(min_length=1, max_length=200)
     basis: str = Field(min_length=1, max_length=200)
     source_note: str = Field(min_length=1, max_length=200)
+
+    def figures(self) -> ImpactFigures:
+        """The numeric figures of this row, without the descriptive fields."""
+        return ImpactFigures(
+            exposure_reduction_pct=self.exposure_reduction_pct,
+            co2_kg_per_day=self.co2_kg_per_day,
+        )
 
 
 ContextFactor = Literal[
@@ -68,7 +76,7 @@ class PlanItem(BaseModel):
 
     text: str = Field(min_length=1, max_length=300)
     why_it_matters: str = Field(min_length=1, max_length=300)
-    impact_id: str | None = Field(default=None, max_length=2000)
+    impact_id: str | None = Field(default=None, max_length=64)
     context_factor: ContextFactor | None = None
     impact: ImpactFigures | None = None
 
@@ -103,7 +111,7 @@ class PlanRequest(BaseModel):
     longitude: float | None = Field(default=None, ge=-180, le=180)
 
     @model_validator(mode="after")
-    def _both_or_neither(self) -> "PlanRequest":
+    def _both_or_neither(self) -> PlanRequest:
         if (self.latitude is None) != (self.longitude is None):
             raise ValueError("latitude and longitude must be provided together")
         return self

@@ -1,5 +1,7 @@
 """Property and example tests for CPCB band and GRAP stage mapping. No network."""
-from hypothesis import given, settings, strategies as st
+
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from airwise.services.aqi import band_for, compute_aqi, grap_for
 

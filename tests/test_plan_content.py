@@ -105,8 +105,6 @@ def test_fallback_plan_content_guarantees(profile, reading):
 def test_llm_plan_content_guarantees(profile, reading, raw):
     """**Validates: Requirements 3.4, 6.8, 6.9**"""
     with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
-        plan = asyncio.run(
-            generate_plan(profile, reading, llm=_FakeLLM(raw), deadline=Deadline())
-        )
+        plan = asyncio.run(generate_plan(profile, reading, llm=_FakeLLM(raw), deadline=Deadline()))
     assert plan.fallback is False
     _check(plan, profile, reading)

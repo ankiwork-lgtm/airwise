@@ -2,7 +2,7 @@
 
 AirWise is a GenAI web assistant that helps families in India handle severe winter smog. It reads the current air quality for your location, asks a short household questionnaire, and builds a personalized plan of low-emission routines, indoor air hacks, and sustainable swaps. A follow-up chat answers questions about the plan.
 
-The backend is a Python FastAPI app deployed as a single Vercel serverless function. The frontend is one HTML page with vanilla JavaScript and no build step. There is no database and there are no user accounts.
+The backend is a Python FastAPI app deployed as a single Vercel serverless function. The frontend is `public/index.html` with `public/app.css` and `public/app.js` (vanilla JavaScript, no build step). There is no database and there are no user accounts.
 
 ## Feature set
 
@@ -13,7 +13,7 @@ The backend is a Python FastAPI app deployed as a single Vercel serverless funct
 - Personalized plan (daily routine, indoor hacks, sustainable swaps, vulnerable-members note) with a "why it matters" line for each item.
 - Rule-based fallback plan when the Anthropic key is missing or the LLM call fails, times out, or returns invalid output.
 - Stateless follow-up chat about the plan, with suggested starter questions.
-- Input validation, a 64 KB request size limit, and per-IP rate limiting (10 plan requests and 30 chat requests per 60 seconds).
+- Input validation, a 64 KB request size limit, and per-IP rate limiting (10 plan requests, 30 chat requests, and 30 AQI lookups per 60 seconds).
 
 ## Local setup
 
@@ -54,13 +54,52 @@ pytest
 
 The tests mock the Open-Meteo and Anthropic APIs, make no network calls, and need no Anthropic key.
 
+### Coverage
+
+```
+pytest --cov=airwise --cov-report=term-missing
+```
+
+Baseline on 2026-11-19, with branch coverage: 95.27% total (two runs gave the same figure). The enforced minimum is 93% (`fail_under` in `pyproject.toml`); it applies only when coverage is measured, so plain `pytest` is unaffected.
+
+## Dependency lock files
+
+- `requirements.lock` pins the runtime dependencies. `requirements-dev.lock` pins the runtime and dev dependencies.
+- Both files are hash-pinned (`--generate-hashes`) and were generated with [uv](https://docs.astral.sh/uv/) 0.13.9 for Python 3.10, with `--universal` so one file serves all platforms.
+- Install exactly the locked versions and verify their hashes:
+  ```
+  pip install --require-hashes -r requirements-dev.lock
+  ```
+- Regenerate after changing `pyproject.toml` (requires `uv`):
+  ```
+  uv pip compile pyproject.toml --generate-hashes --universal --python-version 3.10 -o requirements.lock
+  uv pip compile pyproject.toml --extra dev --generate-hashes --universal --python-version 3.10 -o requirements-dev.lock
+  ```
+- Vercel does not read these files. It installs from `pyproject.toml`, so the lock files only make local and CI installs reproducible.
+
+## Continuous integration
+
+- `.github/workflows/ci.yml` runs on every push to `main` and every pull request: `ruff check`, `ruff format --check`, `mypy`, `pytest` with coverage (enforcing `fail_under`), and `pip-audit` on `requirements-dev.lock`.
+- It installs the hash-pinned `requirements-dev.lock`, then the project itself with `pip install --no-deps -e .`.
+- It runs on Python 3.11 and 3.15 and needs no secrets, because the tests mock all network calls.
+- The workflow has read-only `contents` permission, and both actions are pinned to full commit SHAs (the version is in a trailing comment).
+
 ## Deploying to Vercel
 
 1. Push the repository to GitHub, GitLab, or Bitbucket and import it as a new project in Vercel. No build command is needed.
 2. In Project Settings, then Environment Variables, add `ANTHROPIC_API_KEY` with your key, and `ANTHROPIC_BASE_URL` if you use a gateway.
 3. Optionally add `LLM_MODEL`. If you do not set it, AirWise uses the default model `claude-haiku-5-5`.
 4. Deploy. `vercel.json` routes `/api/*` to the `api/index.py` function (`maxDuration` 30 seconds) and serves the page from `public/`.
+   `vercel.json` also sets the security headers for the static files in `public/`, which never pass through the FastAPI middleware.
+   Keep these values in sync with `SECURITY_HEADERS` in `airwise/middleware.py`; `tests/test_vercel_config.py` fails if they differ.
+
 5. Confirm the deployment: open `/api/health` and check that it returns a healthy response, then open the root page and generate a plan for a city.
+
+### Content-Security-Policy
+
+A strict `Content-Security-Policy` is set (same-origin only; no inline scripts or styles). Any new inline script or style, third-party script, font or CDN needs the policy updated in `airwise/middleware.py` and `vercel.json`; `tests/test_csp.py` enforces that they match and that the page still fits the policy.
+Never add `'unsafe-inline'` or `'unsafe-eval'`; move the code or styles into `public/app.js` or `public/app.css` instead.
+No `report-uri` or `report-to` is configured, so violations only show in the browser console.
 
 ## Manual browser checklist
 
@@ -74,8 +113,14 @@ These behaviors depend on the browser and are not covered by automated tests. Ch
 ## Known limits
 
 - Rate limiting is in memory and per warm serverless instance. A client served by several instances can exceed the stated limits.
+- Client IP for rate limiting is the first valid `X-Forwarded-For` entry, otherwise the socket peer. This is safe only behind a proxy that sets or overwrites the header, as Vercel does.
+  If the app is run directly (for example `uvicorn` exposed on a network) or behind a proxy that appends to the header instead of overwriting it, a client can send its own `X-Forwarded-For` and pick its own rate-limit bucket, bypassing the per-IP limits.
+  Mitigation: keep the app bound to `127.0.0.1` locally, or put it behind a trusted proxy.
 - The AQI uses instantaneous Open-Meteo PM2.5 and PM10 values, not CPCB 24-hour averages, so it only approximates the official AQI.
 - Chat replies are grounded in the supplied plan and impact table through the prompt. This cannot be fully verified by code.
+- `/api/chat` is stateless, so the browser sends back the `plan`, `reading` and `profile` it received, and the server does not check them against anything it issued. The request schema limits their shape, field lengths and list sizes, but a caller can still put arbitrary text and altered figures into them.
+  What this means: the chat model answers from whatever the caller supplied, so figures in a chat reply are only as trustworthy as that input. The reply goes back to the same caller, and the per-IP chat limit, the 64 KB body limit and the prompt rules (treat supplied strings as data, never invent numbers, stay on topic) bound the cost and the effect. There is no cross-user exposure, because nothing is stored or shared.
+  Not done: signing the plan on the server, or recomputing it from the profile and reading. Either would change the request format and the frontend.
 - Worst-case sequential latency (8 s + 8 s + 20 s) exceeds `maxDuration` of 30 s. A 28 s request deadline shortens the LLM timeout in that case.
 - English only, and India only (CPCB bands, indicative GRAP stages, Indian cities).
 

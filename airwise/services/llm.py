@@ -1,4 +1,5 @@
 """LLM client protocol, Anthropic implementation, plan schema, and prompt builders."""
+
 from __future__ import annotations
 
 import asyncio
@@ -10,7 +11,6 @@ import httpx
 from airwise.config import anthropic_api_key, anthropic_base_url, llm_model
 from airwise.models import AirReading, HouseholdProfile, ImpactRow
 
-
 ANTHROPIC_VERSION = "2023-06-01"
 MAX_OUTPUT_TOKENS = 2048
 _TRANSPORT: httpx.AsyncBaseTransport | None = None  # tests inject httpx.MockTransport
@@ -18,6 +18,10 @@ _TRANSPORT: httpx.AsyncBaseTransport | None = None  # tests inject httpx.MockTra
 
 class LLMUnavailable(Exception):
     """Missing key, SDK error, timeout, or unparsable JSON. Never carries the key."""
+
+    def __init__(self, message: str, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class LLMClient(Protocol):
@@ -70,13 +74,15 @@ class AnthropicClient:
         except httpx.HTTPStatusError as exc:
             detail = exc.response.text[:300].replace("\n", " ")
             raise LLMUnavailable(
-                f"LLM call failed (HTTPStatusError {exc.response.status_code}): {detail}"
+                f"LLM call failed (HTTPStatusError {exc.response.status_code}): {detail}",
+                status_code=exc.response.status_code,
             ) from None
         except Exception as exc:  # timeout, bad JSON: report the class only
             raise LLMUnavailable(f"LLM call failed ({type(exc).__name__}).") from None
         if not isinstance(data, dict):
             raise LLMUnavailable("LLM returned a non-object response.")
         return data
+
 
 _NULLABLE_STR = {"type": ["string", "null"]}
 _CONTEXT_FACTORS = [
@@ -133,10 +139,14 @@ SYSTEM_PROMPT = (
 PLAN_INSTRUCTIONS = (
     "Write a daily air-quality plan for the household described in the JSON field 'data'. "
     "Provide 1 to 3 items for each routine slot (morning, commute, midday, evening), "
-    "1 to 5 indoor_hacks, 1 to 5 swaps, and a vulnerable_note naming each vulnerable group present. "
-    "Explain only the figures in impact_table. Cite a table row through its impact_id, or use null. "
-    "Do not output any numeric impact figures. Keep each text and why_it_matters under 300 characters. "
-    "Set context_factor to one of the allowed local factors when an item addresses it, otherwise null."
+    "1 to 5 indoor_hacks, 1 to 5 swaps, and a vulnerable_note naming each vulnerable group "
+    "present. "
+    "Explain only the figures in impact_table. Cite a table row through its impact_id, "
+    "or use null. "
+    "Do not output any numeric impact figures. Keep each text and why_it_matters under 300 "
+    "characters. "
+    "Set context_factor to one of the allowed local factors when an item addresses it, "
+    "otherwise null."
 )
 
 

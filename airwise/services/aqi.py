@@ -1,7 +1,8 @@
 """AQI computation: CPCB India AQI, band and indicative GRAP stage."""
+
 from __future__ import annotations
 
-from typing import Any, NamedTuple
+from typing import Any, Literal, NamedTuple
 
 import httpx
 
@@ -107,8 +108,14 @@ def _num(value: Any) -> float | None:
     return v
 
 
-def _build(name: str, lat: float, lon: float, pm25: float | None, pm10: float | None,
-           source: str) -> AirReading:
+def _build(
+    name: str,
+    lat: float,
+    lon: float,
+    pm25: float | None,
+    pm10: float | None,
+    source: Literal["live", "estimated"],
+) -> AirReading:
     aqi = compute_aqi(pm25, pm10)
     return AirReading(
         location_name=name,
@@ -119,7 +126,7 @@ def _build(name: str, lat: float, lon: float, pm25: float | None, pm10: float | 
         aqi=aqi,
         band=band_for(aqi),
         grap_stage=grap_for(aqi),
-        source=source,  # type: ignore[arg-type]
+        source=source,
     )
 
 
@@ -137,7 +144,7 @@ def estimated_reading(name: str, lat: float | None, lon: float | None) -> AirRea
 
 async def geocode(client: httpx.AsyncClient, city: str) -> Place:
     """Resolve a city to its top-ranked Indian match."""
-    params = {
+    params: dict[str, str | int] = {
         "name": city,
         "count": 1,
         "language": "en",
@@ -169,7 +176,7 @@ async def fetch_pm(
     client: httpx.AsyncClient, lat: float, lon: float
 ) -> tuple[float | None, float | None]:
     """Fetch current PM2.5 and PM10. Raises httpx.HTTPError or ValueError on failure."""
-    params = {"latitude": lat, "longitude": lon, "current": "pm2_5,pm10"}
+    params: dict[str, str | float] = {"latitude": lat, "longitude": lon, "current": "pm2_5,pm10"}
     resp = await client.get(AQ_URL, params=params, timeout=OPEN_METEO_TIMEOUT_S)
     resp.raise_for_status()
     data = resp.json()

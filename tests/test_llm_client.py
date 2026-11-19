@@ -1,4 +1,5 @@
 """AnthropicClient request construction and model default (Requirement 6.10)."""
+
 import asyncio
 import json
 
@@ -21,7 +22,9 @@ def _install_fake(monkeypatch, response=None):
         calls["body"] = json.loads(request.content)
         if response is not None:
             return response
-        return httpx.Response(200, json={"content": [{"type": "tool_use", "name": "plan", "input": {"a": 1}}]})
+        return httpx.Response(
+            200, json={"content": [{"type": "tool_use", "name": "plan", "input": {"a": 1}}]}
+        )
 
     monkeypatch.setattr(llm, "_TRANSPORT", httpx.MockTransport(handler))
     return calls
@@ -68,7 +71,9 @@ def test_missing_key_raises(monkeypatch):
 
 def test_no_tool_use_block_raises(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
-    _install_fake(monkeypatch, httpx.Response(200, json={"content": [{"type": "text", "text": "hi"}]}))
+    _install_fake(
+        monkeypatch, httpx.Response(200, json={"content": [{"type": "text", "text": "hi"}]})
+    )
     with pytest.raises(LLMUnavailable):
         _run()
 

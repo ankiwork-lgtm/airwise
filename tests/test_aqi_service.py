@@ -1,9 +1,11 @@
 """AQI service tests with httpx.MockTransport (no network, no API key)."""
+
 import asyncio
 
 import httpx
 import pytest
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from airwise.config import AQ_URL, GEOCODE_URL
 from airwise.errors import CityNotFound, InvalidCity, LookupUnavailable
@@ -60,7 +62,11 @@ def city_kwargs(city="Delhi"):
     st.one_of(
         st.just(""),
         st.text(alphabet=" \t\n\r", max_size=20),
-        st.text(alphabet=st.characters(blacklist_categories=("Cs", "Z", "Cc")), min_size=101, max_size=150),
+        st.text(
+            alphabet=st.characters(blacklist_categories=("Cs", "Z", "Cc")),
+            min_size=101,
+            max_size=150,
+        ),
     )
 )
 def test_property_invalid_city_rejected_without_http(city):
@@ -73,7 +79,9 @@ def test_property_invalid_city_rejected_without_http(city):
 # **Validates: Requirements 1.9**
 @settings(max_examples=100, deadline=None)
 @given(
-    st.text(alphabet=st.characters(blacklist_categories=("Cs", "Z", "Cc")), min_size=1, max_size=100),
+    st.text(
+        alphabet=st.characters(blacklist_categories=("Cs", "Z", "Cc")), min_size=1, max_size=100
+    ),
     st.text(alphabet=" \t", max_size=5),
 )
 def test_property_valid_city_reaches_geocoding(city, pad):
@@ -83,8 +91,10 @@ def test_property_valid_city_reaches_geocoding(city, pad):
 
 
 def test_geocode_request_parameters_and_timeouts():
-    out, seen = run(make_handler(httpx.Response(200, json={"current": {"pm2_5": 40, "pm10": 80}})),
-                    **city_kwargs())
+    out, seen = run(
+        make_handler(httpx.Response(200, json={"current": {"pm2_5": 40, "pm10": 80}})),
+        **city_kwargs(),
+    )
     assert out.source == "live"
     geo, aq = seen
     p = geo.url.params
@@ -139,7 +149,8 @@ def test_aq_failure_gives_estimated_reading_single_attempt(aq):
 
 
 @pytest.mark.parametrize(
-    "current", [{"pm2_5": 40, "pm10": None}, {"pm2_5": None, "pm10": 120}, {"pm2_5": 40, "pm10": 120}]
+    "current",
+    [{"pm2_5": 40, "pm10": None}, {"pm2_5": None, "pm10": 120}, {"pm2_5": 40, "pm10": 120}],
 )
 def test_at_least_one_value_is_live(current):
     out, seen = run(make_handler(httpx.Response(200, json={"current": current})), **city_kwargs())

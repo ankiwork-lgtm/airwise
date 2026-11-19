@@ -1,16 +1,17 @@
 """FastAPI application factory, health route, index route, and error handlers."""
+
 from __future__ import annotations
 
 import logging
 from pathlib import Path
 
 import httpx
-
 from fastapi import Depends, FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from airwise.config import (
+    AQI_LIMIT,
     CHAT_LIMIT,
     OPEN_METEO_TIMEOUT_S,
     PLAN_LIMIT,
@@ -20,8 +21,12 @@ from airwise.config import (
     load_env_file,
 )
 from airwise.errors import AppError, RateLimited, ValidationFailure
-from airwise.middleware import BodySizeLimitMiddleware, client_ip
-from airwise.ratelimit import FixedWindowLimiter
+from airwise.middleware import (
+    SECURITY_HEADERS,
+    BodySizeLimitMiddleware,
+    SecurityHeadersMiddleware,
+    client_ip,
+)
 from airwise.models import (
     AirReading,
     ChatReply,
@@ -29,12 +34,16 @@ from airwise.models import (
     PlanRequest,
     PlanResponse,
 )
+from airwise.ratelimit import FixedWindowLimiter
 from airwise.services import aqi as aqi_service
 from airwise.services.chat import answer as chat_answer
-from airwise.services.llm import LLMClient, AnthropicClient
+from airwise.services.llm import AnthropicClient, LLMClient
 from airwise.services.plan import generate_plan
 
-INDEX_PATH = Path(__file__).resolve().parent.parent / "public" / "index.html"
+PUBLIC_DIR = Path(__file__).resolve().parent.parent / "public"
+INDEX_PATH = PUBLIC_DIR / "index.html"
+CSS_PATH = PUBLIC_DIR / "app.css"
+JS_PATH = PUBLIC_DIR / "app.js"
 
 logger = logging.getLogger("airwise")
 GENERIC_SERVER_ERROR_MESSAGE = "Internal server error."
@@ -78,9 +87,7 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
     )
 
 
-async def validation_error_handler(
-    request: Request, exc: RequestValidationError
-) -> JSONResponse:
+async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     # Build fields from `loc` only. Never echo `input` or `msg` values.
     fields: list[str] = []
     for err in exc.errors():
@@ -96,9 +103,12 @@ async def validation_error_handler(
 async def unexpected_error_handler(request: Request, exc: Exception) -> JSONResponse:
     # Log only the exception class name: no message, traceback, or paths.
     logger.error("Unhandled exception: %s", type(exc).__name__)
+    # Starlette's ServerErrorMiddleware sends this response outside the user middleware
+    # stack, so SecurityHeadersMiddleware never sees it: set the headers here.
     return JSONResponse(
         status_code=500,
         content=error_body("server_error", GENERIC_SERVER_ERROR_MESSAGE),
+        headers={name.decode("ascii"): value.decode("ascii") for name, value in SECURITY_HEADERS},
     )
 
 
@@ -116,15 +126,25 @@ def create_app() -> FastAPI:
     app = FastAPI(title="AirWise")
     plan_limiter = FixedWindowLimiter(PLAN_LIMIT, WINDOW_S)
     chat_limiter = FixedWindowLimiter(CHAT_LIMIT, WINDOW_S)
+    aqi_limiter = FixedWindowLimiter(AQI_LIMIT, WINDOW_S)
     app.state.plan_limiter = plan_limiter
     app.state.chat_limiter = chat_limiter
+    app.state.aqi_limiter = aqi_limiter
     plan_limit_check = _rate_limit_check("plan", plan_limiter)
     chat_limit_check = _rate_limit_check("chat", chat_limiter)
+    aqi_limit_check = _rate_limit_check("aqi", aqi_limiter)
 
-    app.add_exception_handler(AppError, app_error_handler)
-    app.add_exception_handler(RequestValidationError, validation_error_handler)
+    # Starlette types handlers as (Request, Exception) but only calls each one for the
+    # exception class it is registered with, so the narrower `exc` type is safe.
+    app.add_exception_handler(AppError, app_error_handler)  # type: ignore[arg-type]
+    app.add_exception_handler(
+        RequestValidationError,
+        validation_error_handler,  # type: ignore[arg-type]
+    )
     app.add_exception_handler(Exception, unexpected_error_handler)
     app.add_middleware(BodySizeLimitMiddleware)
+    # Added last, so outermost among user middleware: also covers the 413s sent above.
+    app.add_middleware(SecurityHeadersMiddleware)
 
     @app.get("/api/health")
     async def health() -> dict:
@@ -132,11 +152,13 @@ def create_app() -> FastAPI:
 
     @app.get("/api/aqi", response_model=AirReading)
     async def get_aqi(
+        request: Request,
         city: str | None = None,
         lat: float | None = Query(default=None, ge=-90, le=90),
         lon: float | None = Query(default=None, ge=-180, le=180),
         client: httpx.AsyncClient = Depends(get_http_client),
     ) -> AirReading:
+        aqi_limit_check(request)
         has_coords = lat is not None and lon is not None
         if (city is not None) == has_coords or (lat is None) != (lon is None):
             if city is not None and (lat is not None or lon is not None):
@@ -164,9 +186,7 @@ def create_app() -> FastAPI:
             )
             reading = reading.model_copy(update={"location_name": profile.city})
         else:
-            reading = await aqi_service.get_reading(
-                client, city=profile.city, lat=None, lon=None
-            )
+            reading = await aqi_service.get_reading(client, city=profile.city, lat=None, lon=None)
         plan = await generate_plan(profile, reading, llm=llm, deadline=deadline)
         return PlanResponse(plan=plan, reading=reading)
 
@@ -183,6 +203,16 @@ def create_app() -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     async def index() -> HTMLResponse:
         return HTMLResponse(INDEX_PATH.read_text(encoding="utf-8"))
+
+    # Vercel serves public/ statically in production; these two routes keep
+    # local `uvicorn` working without exposing the rest of the directory.
+    @app.get("/app.css", include_in_schema=False)
+    async def app_css() -> FileResponse:
+        return FileResponse(CSS_PATH, media_type="text/css; charset=utf-8")
+
+    @app.get("/app.js", include_in_schema=False)
+    async def app_js() -> FileResponse:
+        return FileResponse(JS_PATH, media_type="text/javascript; charset=utf-8")
 
     return app
 

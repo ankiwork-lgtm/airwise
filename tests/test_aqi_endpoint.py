@@ -1,7 +1,9 @@
 """Endpoint tests for GET /api/aqi and the coordinate validation property."""
+
 import httpx
 from fastapi.testclient import TestClient
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from airwise.config import AQ_URL, GEOCODE_URL
 from airwise.main import create_app, get_http_client

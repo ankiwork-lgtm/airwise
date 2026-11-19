@@ -5,17 +5,20 @@ description = "GenAI assistant for low-emission routines during severe winter sm
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "fastapi>=0.110",
-    "httpx>=0.27",
-    
-    "pydantic>=2.6",
+    "fastapi>=0.162.5",
+    "httpx>=0.28.1",
+    "pydantic>=2.14.3",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.0",
-    "uvicorn>=0.29",
-    "hypothesis>=6.100",
+    "pytest>=9.2.0",
+    "uvicorn>=0.54.0",
+    "hypothesis>=6.168.5",
+    "ruff>=0.17.5",
+    "mypy>=2.4.1",
+    "pytest-cov>=7.1.0",
+    "pip-audit>=2.10.1",
 ]
 
 [build-system]
@@ -28,3 +31,32 @@ include = ["airwise*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+# Ruff also formats Python code blocks inside Markdown; keep docs untouched.
+extend-exclude = ["*.md"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI dependency/param declarations in signature defaults are the framework idiom.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["airwise"]
+warn_unused_ignores = true
+warn_redundant_casts = true
+check_untyped_defs = true
+
+[tool.coverage.run]
+source = ["airwise"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 93
+show_missing = true
+skip_covered = false

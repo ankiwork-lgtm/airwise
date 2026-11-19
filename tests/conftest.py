@@ -19,7 +19,11 @@ def _isolate_env_and_network(monkeypatch):
 
     def _blocked(self, address, *args, **kwargs):
         # Loopback is allowed: Windows asyncio builds its self-pipe with it.
-        if isinstance(address, tuple) and address and address[0] in ("127.0.0.1", "::1", "localhost"):
+        if (
+            isinstance(address, tuple)
+            and address
+            and address[0] in ("127.0.0.1", "::1", "localhost")
+        ):
             return real_connect(self, address, *args, **kwargs)
         raise RuntimeError("Network access is blocked in tests")
 

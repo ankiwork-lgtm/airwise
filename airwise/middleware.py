@@ -1,30 +1,72 @@
-"""Pure ASGI middleware: request body size limit."""
+"""Pure ASGI middleware: request body size limit and security response headers."""
+
 from __future__ import annotations
 
 import ipaddress
 import json
 
+from starlette.requests import Request
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
 from airwise.config import MAX_BODY_BYTES
 from airwise.errors import PayloadTooLarge
 
+# Strict CSP: same-origin only, no inline script/style, no 'unsafe-*' (the page loads only
+# /app.js and /app.css and calls only /api/...). Mirrored in vercel.json; tests keep them equal.
+CSP_DIRECTIVES: tuple[str, ...] = (
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self'",
+    "img-src 'self'",
+    "connect-src 'self'",
+    "base-uri 'none'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+)
+CONTENT_SECURITY_POLICY = "; ".join(CSP_DIRECTIVES)
 
-def client_ip(request) -> str:
+# Single source of truth for the security headers (T3.5 mirrors these in vercel.json).
+# HSTS is left to the TLS terminator.
+SECURITY_HEADERS: tuple[tuple[bytes, bytes], ...] = (
+    # Stop browsers MIME-sniffing a response into an executable type.
+    (b"X-Content-Type-Options", b"nosniff"),
+    # Never leak the page URL to other origins via the Referer header.
+    (b"Referrer-Policy", b"no-referrer"),
+    # Forbid framing the app (clickjacking).
+    (b"X-Frame-Options", b"DENY"),
+    # Geolocation stays on for our own origin ("Use my location"); other powerful features off.
+    (
+        b"Permissions-Policy",
+        b"geolocation=(self), camera=(), microphone=(), payment=(), usb=()",
+    ),
+    # Isolate the browsing context group from cross-origin windows.
+    (b"Cross-Origin-Opener-Policy", b"same-origin"),
+    # Content-Security-Policy (frame-ancestors duplicates X-Frame-Options for modern browsers).
+    (b"Content-Security-Policy", CONTENT_SECURITY_POLICY.encode("ascii")),
+)
+
+
+def client_ip(request: Request) -> str:
     """First valid X-Forwarded-For entry, else the socket peer, else "unknown"."""
     header = request.headers.get("x-forwarded-for")
     if header:
         candidate = header.split(",")[0].strip()
         try:
             ipaddress.ip_address(candidate)
-            return candidate
         except ValueError:
             pass
+        else:
+            # ip_address() accepts IPv6 scope ids ("fe80::1%anything"); never use those as keys.
+            if "%" not in candidate:
+                return candidate
     client = request.client
     if client is not None and client.host:
         return client.host
     return "unknown"
 
 
-async def _send_413(send) -> None:
+async def _send_413(send: Send) -> None:
     payload = json.dumps(
         {
             "error": {
@@ -57,11 +99,11 @@ class BodySizeLimitMiddleware:
     never invoked.
     """
 
-    def __init__(self, app, max_bytes: int = MAX_BODY_BYTES) -> None:
+    def __init__(self, app: ASGIApp, max_bytes: int = MAX_BODY_BYTES) -> None:
         self.app = app
         self.max_bytes = max_bytes
 
-    async def __call__(self, scope, receive, send) -> None:
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
@@ -83,7 +125,7 @@ class BodySizeLimitMiddleware:
             return
 
         # No usable Content-Length: count streamed bytes before invoking the app.
-        messages: list[dict] = []
+        messages: list[Message] = []
         total = 0
         while True:
             message = await receive()
@@ -101,10 +143,32 @@ class BodySizeLimitMiddleware:
 
         replay = iter(messages)
 
-        async def replay_receive() -> dict:
+        async def replay_receive() -> Message:
             try:
                 return next(replay)
             except StopIteration:
                 return await receive()
 
         await self.app(scope, replay_receive, send)
+
+
+class SecurityHeadersMiddleware:
+    """Set SECURITY_HEADERS on every HTTP response, replacing same-named headers."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_headers(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                names = {name.lower() for name, _ in SECURITY_HEADERS}
+                headers = [(k, v) for k, v in message.get("headers", []) if k.lower() not in names]
+                headers.extend(SECURITY_HEADERS)
+                message = {**message, "headers": headers}
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)

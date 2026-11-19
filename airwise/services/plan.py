@@ -1,13 +1,11 @@
 """Plan_Generator: one LLM call for wording, server-owned figures, deterministic fallback."""
-from __future__ import annotations
 
-from pydantic import ValidationError
+from __future__ import annotations
 
 from airwise.config import Deadline, anthropic_api_key
 from airwise.models import (
     AirReading,
     HouseholdProfile,
-    ImpactFigures,
     ImpactRow,
     LLMItem,
     LLMPlan,
@@ -15,10 +13,10 @@ from airwise.models import (
     PlanItem,
 )
 from airwise.services.fallback import (
-    _FACTOR_ITEM,
-    _context_factors,
-    _vulnerable_note,
+    FACTOR_ITEM,
     build_fallback_plan,
+    build_vulnerable_note,
+    context_factors,
 )
 from airwise.services.impact import ImpactResult, compute_impact
 from airwise.services.llm import (
@@ -32,14 +30,6 @@ _NOTE_MAX = 500
 _SLOTS = ("morning", "commute", "midday", "evening")
 
 
-def _figures(row: ImpactRow) -> ImpactFigures:
-    return ImpactFigures(
-        exposure_reduction_pct=row.exposure_reduction_pct,
-        co2_kg_per_day=row.co2_kg_per_day,
-        approximate=True,
-    )
-
-
 def _sanitize_item(item: LLMItem, rows: dict[str, ImpactRow]) -> PlanItem:
     row = rows.get(item.impact_id) if item.impact_id is not None else None
     return PlanItem(
@@ -47,7 +37,7 @@ def _sanitize_item(item: LLMItem, rows: dict[str, ImpactRow]) -> PlanItem:
         why_it_matters=item.why_it_matters,
         impact_id=row.id if row else None,
         context_factor=item.context_factor,
-        impact=_figures(row) if row else None,
+        impact=row.figures() if row else None,
     )
 
 
@@ -82,7 +72,7 @@ def ensure_vulnerable_note(profile: HouseholdProfile, note: str) -> str:
         return note[:_NOTE_MAX]
     if note.strip() and not _missing_groups(profile, note):
         return note[:_NOTE_MAX]
-    sentence = _vulnerable_note(profile)
+    sentence = build_vulnerable_note(profile)
     base = note.strip()
     if not base:
         return sentence[:_NOTE_MAX]
@@ -96,14 +86,14 @@ def ensure_local_context(
     profile: HouseholdProfile, reading: AirReading, routine: dict[str, list[PlanItem]]
 ) -> None:
     """Add a routine item for the first relevant local factor if none is tagged (in place)."""
-    factors = _context_factors(profile, reading)
+    factors = context_factors(profile, reading)
     if not factors:
         return
     if any(i.context_factor in factors for slot in _SLOTS for i in routine[slot]):
         return
     factor = factors[0]
-    text, why = _FACTOR_ITEM[factor]
-    new_item = PlanItem(text=text[:300], why_it_matters=why[:300], context_factor=factor)  # type: ignore[arg-type]
+    text, why = FACTOR_ITEM[factor]
+    new_item = PlanItem(text=text[:300], why_it_matters=why[:300], context_factor=factor)
     for slot in ("midday", "morning", "evening", "commute"):
         if len(routine[slot]) < 3:
             routine[slot].append(new_item)
@@ -144,5 +134,6 @@ async def generate_plan(
             fallback=False,
             estimated=reading.source == "estimated",
         )
-    except (ValidationError, Exception):  # any LLM error, timeout, or invalid output
+    # Deliberately broad: any LLM error, timeout, or invalid output means fallback.
+    except Exception:
         return build_fallback_plan(profile, reading, impact)

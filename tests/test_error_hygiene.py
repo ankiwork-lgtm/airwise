@@ -1,4 +1,5 @@
 """Error handling and secret hygiene: generic 500 body, fake key never leaks."""
+
 import logging
 
 import httpx
@@ -7,11 +8,15 @@ from fastapi.testclient import TestClient
 
 from airwise.main import create_app, get_http_client, get_llm_client
 from airwise.services import llm as llm_module
+from airwise.services.chat import CHAT_FAILURE_MESSAGE
 from tests.test_aqi_endpoint import AQ_OK, GEO_OK, make_client, make_handler
+from tests.test_chat_validation import RecordingLLM, valid_payload
 from tests.test_plan_validation import VALID_PROFILE
 
 FAKE_KEY = "sk-fake-SECRET-0123456789abcdef"
 SECRET_PATH = r"C:\Users\secret\project\airwise\main.py"
+ECHO_MARKER = "SECRET-ECHO-MARKER-12345"
+USER_TEXT = "Is the XYZZY-USER-TEXT-98765 level safe today?"
 
 
 def _boom_client() -> TestClient:
@@ -128,3 +133,67 @@ def test_llm_unavailable_message_has_no_key(monkeypatch):
     assert FAKE_KEY not in str(info.value)
     assert FAKE_KEY not in repr(info.value)
     assert info.value.__cause__ is None
+
+
+def test_chat_http_error_log_has_class_and_status_but_no_upstream_body(monkeypatch, caplog):
+    """Provider 500 body echoes request text: the log keeps class and status, never the body."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")
+    caplog.set_level(logging.WARNING, logger="airwise")
+
+    def upstream(request):
+        body = f"gateway error {ECHO_MARKER} echo: {USER_TEXT} key=test-key-not-real"
+        return httpx.Response(500, text=body)
+
+    monkeypatch.setattr(llm_module, "_TRANSPORT", httpx.MockTransport(upstream))
+    app = create_app()
+    app.dependency_overrides[get_llm_client] = llm_module.AnthropicClient
+    with TestClient(app) as c:
+        r = c.post("/api/chat", json=valid_payload(USER_TEXT))
+
+    assert r.status_code == 200
+    assert r.json() == {"reply": CHAT_FAILURE_MESSAGE, "failed": True}
+    assert "chat LLM call failed" in caplog.text
+    assert "LLMUnavailable" in caplog.text
+    assert "500" in caplog.text
+    assert ECHO_MARKER not in caplog.text
+    assert "test-key-not-real" not in caplog.text
+    assert USER_TEXT not in caplog.text
+    assert "XYZZY-USER-TEXT-98765" not in caplog.text
+
+
+def test_chat_non_http_error_log_has_class_only_and_no_message(monkeypatch, caplog):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")
+    caplog.set_level(logging.WARNING, logger="airwise")
+    llm = RecordingLLM(exc=RuntimeError(f"secret detail: {ECHO_MARKER}"))
+    app = create_app()
+    app.dependency_overrides[get_llm_client] = lambda: llm
+    with TestClient(app) as c:
+        r = c.post("/api/chat", json=valid_payload(USER_TEXT))
+
+    assert r.json() == {"reply": CHAT_FAILURE_MESSAGE, "failed": True}
+    assert "RuntimeError" in caplog.text
+    assert "upstream_status=None" in caplog.text
+    assert ECHO_MARKER not in caplog.text
+    assert "secret detail" not in caplog.text
+    assert "XYZZY-USER-TEXT-98765" not in caplog.text
+
+
+def test_llm_unavailable_keeps_message_and_exposes_status_code(monkeypatch):
+    """The message text is unchanged for callers; status_code is an extra attribute."""
+    import asyncio
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setattr(
+        llm_module,
+        "_TRANSPORT",
+        httpx.MockTransport(lambda request: httpx.Response(503, text=ECHO_MARKER)),
+    )
+    with pytest.raises(llm_module.LLMUnavailable) as info:
+        asyncio.run(
+            llm_module.AnthropicClient().complete_json(
+                system="s", user="u", schema_name="n", schema={}, timeout_s=2
+            )
+        )
+    assert str(info.value) == f"LLM call failed (HTTPStatusError 503): {ECHO_MARKER}"
+    assert info.value.status_code == 503
+    assert llm_module.LLMUnavailable("x").status_code is None

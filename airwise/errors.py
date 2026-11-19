@@ -1,4 +1,5 @@
 """Application error hierarchy. Each error carries an HTTP status, code, and field names."""
+
 from __future__ import annotations
 
 

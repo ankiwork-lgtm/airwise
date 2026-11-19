@@ -1,13 +1,14 @@
 """Property 12: Plan impact figures always equal table figures."""
+
 import asyncio
 
-from hypothesis import HealthCheck, given, settings, strategies as st
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
 
 from airwise.config import Deadline
 from airwise.models import ImpactFigures
 from airwise.services.impact import compute_impact
 from airwise.services.plan import _SLOTS, generate_plan
-
 from tests.strategies import llm_plans, profiles, readings
 
 
@@ -40,9 +41,7 @@ def test_plan_figures_equal_table(monkeypatch, profile, reading, data):
     table = {r.id: r for r in impact.rows}
     payload = data.draw(llm_plans(valid_ids=list(table)))
 
-    plan = asyncio.run(
-        generate_plan(profile, reading, llm=_FakeLLM(payload), deadline=Deadline())
-    )
+    plan = asyncio.run(generate_plan(profile, reading, llm=_FakeLLM(payload), deadline=Deadline()))
 
     assert plan.impact_table == list(impact.rows)
     assert plan.exposure_score == impact.exposure_score
@@ -72,9 +71,7 @@ def test_plan_figures_equal_table_valid_llm_output(monkeypatch, profile, reading
     table = {r.id: r for r in impact.rows}
     payload = data.draw(llm_plans(valid_ids=list(table), allow_extra_keys=False))
 
-    plan = asyncio.run(
-        generate_plan(profile, reading, llm=_FakeLLM(payload), deadline=Deadline())
-    )
+    plan = asyncio.run(generate_plan(profile, reading, llm=_FakeLLM(payload), deadline=Deadline()))
 
     assert plan.fallback is False
     assert plan.impact_table == list(impact.rows)

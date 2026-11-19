@@ -1,5 +1,7 @@
 """Property test for AQI computation. No network."""
-from hypothesis import given, settings, strategies as st
+
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from airwise.services.aqi import (
     PM10_BREAKPOINTS,

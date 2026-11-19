@@ -2,15 +2,17 @@
 
 Pure function: no LLM, no I/O, no clock.
 """
+
 from __future__ import annotations
 
 from airwise.models import (
     AirReading,
+    ContextFactor,
     HouseholdProfile,
-    ImpactFigures,
     ImpactRow,
     Plan,
     PlanItem,
+    Routine,
 )
 from airwise.services.impact import ImpactResult
 
@@ -66,38 +68,30 @@ _COMMUTE_TEXT = {
 _COMMUTE_WHY = {
     "car": "Closed windows and recirculated air reduce in-cabin exposure to road dust and exhaust.",
     "two_wheeler": "Riders breathe traffic exhaust directly, so a mask helps cut exposure.",
-    "bus_metro": "Shared transport lowers emissions per person, and a mask lowers exposure in crowds.",
+    "bus_metro": (
+        "Shared transport lowers emissions per person, and a mask lowers exposure in crowds."
+    ),
     "walk_cycle": "Streets away from traffic have lower concentrations of pollutants.",
     "work_from_home": "Staying home avoids the outdoor exposure of a commute.",
 }
-
-
-def _figures(row: ImpactRow | None) -> ImpactFigures | None:
-    if row is None:
-        return None
-    return ImpactFigures(
-        exposure_reduction_pct=row.exposure_reduction_pct,
-        co2_kg_per_day=row.co2_kg_per_day,
-        approximate=True,
-    )
 
 
 def _item(
     text: str,
     why: str,
     row: ImpactRow | None = None,
-    context_factor: str | None = None,
+    context_factor: ContextFactor | None = None,
 ) -> PlanItem:
     return PlanItem(
         text=text[:300],
         why_it_matters=(why or "Helps reduce your exposure to polluted air.")[:300],
         impact_id=row.id if row else None,
-        context_factor=context_factor,  # type: ignore[arg-type]
-        impact=_figures(row),
+        context_factor=context_factor,
+        impact=row.figures() if row else None,
     )
 
 
-def _vulnerable_note(profile: HouseholdProfile) -> str:
+def build_vulnerable_note(profile: HouseholdProfile) -> str:
     groups = []
     if profile.kids:
         groups.append("kids")
@@ -106,7 +100,10 @@ def _vulnerable_note(profile: HouseholdProfile) -> str:
     if profile.respiratory:
         groups.append("members with respiratory conditions")
     if not groups:
-        return "No kids, elderly, or respiratory-sensitive members were listed; normal precautions apply."
+        return (
+            "No kids, elderly, or respiratory-sensitive members were listed; "
+            "normal precautions apply."
+        )
     names = ", ".join(groups)
     note = (
         f"Take extra care for {names}: keep them indoors on high-pollution days, "
@@ -116,8 +113,8 @@ def _vulnerable_note(profile: HouseholdProfile) -> str:
     return note[:500]
 
 
-def _context_factors(profile: HouseholdProfile, reading: AirReading) -> list[str]:
-    factors: list[str] = []
+def context_factors(profile: HouseholdProfile, reading: AirReading) -> list[ContextFactor]:
+    factors: list[ContextFactor] = []
     if profile.cooking_fuel == "biomass" or profile.heating == "biomass_burning":
         factors.append("biomass_cooking_heating")
     if profile.commute == "two_wheeler":
@@ -130,7 +127,7 @@ def _context_factors(profile: HouseholdProfile, reading: AirReading) -> list[str
     return factors
 
 
-_FACTOR_ITEM = {
+FACTOR_ITEM: dict[ContextFactor, tuple[str, str]] = {
     "biomass_cooking_heating": (
         "Avoid biomass for cooking and heating today; ventilate the kitchen while cooking.",
         "Burning biomass indoors releases fine particles that raise household exposure.",
@@ -144,11 +141,13 @@ _FACTOR_ITEM = {
         "Metro travel cuts per-person emissions and avoids street-level exhaust.",
     ),
     "stubble_burning": (
-        "Check smoke forecasts: crop-residue (stubble) burning season can worsen air; stay indoors on smoky days.",
+        "Check smoke forecasts: crop-residue (stubble) burning season can worsen air; "
+        "stay indoors on smoky days.",
         "Stubble smoke drifting into cities adds fine particles on top of local pollution.",
     ),
     "firecrackers": (
-        "Avoid firecrackers and stay away from areas where they are burnt, especially around festivals.",
+        "Avoid firecrackers and stay away from areas where they are burnt, "
+        "especially around festivals.",
         "Firecracker smoke sharply raises short-term fine particle levels.",
     ),
 }
@@ -159,10 +158,10 @@ def build_fallback_plan(
 ) -> Plan:
     rows = {r.id: r for r in impact.rows}
     band = reading.band
-    factors = _context_factors(profile, reading)
+    factors = context_factors(profile, reading)
     why_band = _BAND_WHY[band]
 
-    def tag_for(*candidates: str) -> str | None:
+    def tag_for(*candidates: ContextFactor) -> ContextFactor | None:
         for c in candidates:
             if c in factors:
                 return c
@@ -187,7 +186,7 @@ def build_fallback_plan(
     routine_lists = {"morning": morning, "commute": commute, "midday": midday, "evening": evening}
     if factors and not any(i.context_factor for lst in routine_lists.values() for i in lst):
         f = factors[0]
-        text, why = _FACTOR_ITEM[f]
+        text, why = FACTOR_ITEM[f]
         midday.append(_item(text, why, None, f))
     elif factors:
         # Add a biomass/seasonal tagged item when available to reflect profile/reading.
@@ -195,7 +194,7 @@ def build_fallback_plan(
             if f in ("biomass_cooking_heating",) and not any(
                 i.context_factor == f for lst in routine_lists.values() for i in lst
             ):
-                text, why = _FACTOR_ITEM[f]
+                text, why = FACTOR_ITEM[f]
                 morning.append(_item(text, why, None, f))
                 break
 
@@ -228,10 +227,10 @@ def build_fallback_plan(
         )
 
     plan = Plan(
-        routine={"morning": morning, "commute": commute, "midday": midday, "evening": evening},  # type: ignore[arg-type]
+        routine=Routine(morning=morning, commute=commute, midday=midday, evening=evening),
         indoor_hacks=indoor[:5],
         swaps=swaps[:5],
-        vulnerable_note=_vulnerable_note(profile),
+        vulnerable_note=build_vulnerable_note(profile),
         impact_table=list(impact.rows),
         exposure_score=impact.exposure_score,
         fallback=True,
