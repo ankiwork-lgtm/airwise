@@ -17,6 +17,8 @@ MAX_BODY_BYTES = 65_536
 PLAN_LIMIT, CHAT_LIMIT, WINDOW_S = 10, 30, 60
 AQI_LIMIT = 30
 ESTIMATED_PM25, ESTIMATED_PM10 = 150.0, 260.0  # typical winter values
+LOOKUP_CACHE_TTL_S = 300.0  # geocode and PM lookup cache lifetime (about 5 minutes)
+LOOKUP_CACHE_MAX_ENTRIES = 256  # per cache; oldest entries are evicted first
 
 DEFAULT_LLM_MODEL = "claude-haiku-5-5"
 DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1"

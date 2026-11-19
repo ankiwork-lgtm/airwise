@@ -5,6 +5,14 @@ import pytest
 from fastapi.testclient import TestClient
 
 from airwise.main import create_app
+from airwise.services.aqi import clear_cache
+
+
+@pytest.fixture(autouse=True)
+def _clean_lookup_cache():
+    clear_cache()
+    yield
+    clear_cache()
 
 
 @pytest.fixture(autouse=True)

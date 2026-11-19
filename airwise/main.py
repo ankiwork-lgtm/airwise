@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
@@ -37,7 +40,7 @@ from airwise.models import (
 from airwise.ratelimit import FixedWindowLimiter
 from airwise.services import aqi as aqi_service
 from airwise.services.chat import answer as chat_answer
-from airwise.services.llm import AnthropicClient, LLMClient
+from airwise.services.llm import AnthropicClient, LLMClient, aclose_llm_client
 from airwise.services.plan import generate_plan
 
 PUBLIC_DIR = Path(__file__).resolve().parent.parent / "public"
@@ -49,15 +52,55 @@ logger = logging.getLogger("airwise")
 GENERIC_SERVER_ERROR_MESSAGE = "Internal server error."
 
 
+# An AsyncClient is bound to the event loop it first runs in, so the loop is stored with it.
 _client: httpx.AsyncClient | None = None
+_client_loop: asyncio.AbstractEventLoop | None = None
 
 
 async def get_http_client() -> httpx.AsyncClient:
     """Shared AsyncClient; override via app.dependency_overrides in tests."""
-    global _client
-    if _client is None:
+    global _client, _client_loop
+    loop = asyncio.get_running_loop()
+    # The running loop is never closed, so a stored loop that is not this one is either
+    # another live loop or a closed one: drop its client (it cannot be awaited from here).
+    if _client is None or _client_loop is not loop:
         _client = httpx.AsyncClient(timeout=OPEN_METEO_TIMEOUT_S)
+        _client_loop = loop
     return _client
+
+
+async def aclose_http_client() -> None:
+    """Close and forget the shared client, if any. Safe to call repeatedly."""
+    global _client, _client_loop
+    client, loop = _client, _client_loop
+    _client = _client_loop = None
+    if client is not None and loop is asyncio.get_running_loop():
+        await client.aclose()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Close the shared HTTP clients on shutdown; nothing to do on startup (clients are lazy).
+
+    The clients are process-wide, so shutting down any app (e.g. one per test) closes the
+    shared ones. That is safe because both accessors recreate them lazily on next use.
+    On Vercel the serverless process may be frozen without ever running this shutdown,
+    which is harmless: it exists for uvicorn/container shutdowns and tests.
+    """
+    try:
+        yield
+    finally:
+        # Isolated so one failing close cannot skip the other or mask the original error.
+        # Log the exception class only (no message), and let CancelledError and other
+        # BaseExceptions propagate.
+        for name, close in (
+            ("open-meteo", aclose_http_client),
+            ("llm", aclose_llm_client),
+        ):
+            try:
+                await close()
+            except Exception as exc:
+                logger.warning("Failed to close %s client: %s", name, type(exc).__name__)
 
 
 def get_llm_client() -> LLMClient:
@@ -123,7 +166,7 @@ def _rate_limit_check(endpoint: str, limiter: FixedWindowLimiter):
 
 def create_app() -> FastAPI:
     load_env_file()
-    app = FastAPI(title="AirWise")
+    app = FastAPI(title="AirWise", lifespan=lifespan)
     plan_limiter = FixedWindowLimiter(PLAN_LIMIT, WINDOW_S)
     chat_limiter = FixedWindowLimiter(CHAT_LIMIT, WINDOW_S)
     aqi_limiter = FixedWindowLimiter(AQI_LIMIT, WINDOW_S)
@@ -201,8 +244,8 @@ def create_app() -> FastAPI:
         return await chat_answer(body, llm=llm, deadline=deadline)
 
     @app.get("/", response_class=HTMLResponse)
-    async def index() -> HTMLResponse:
-        return HTMLResponse(INDEX_PATH.read_text(encoding="utf-8"))
+    async def index() -> FileResponse:
+        return FileResponse(INDEX_PATH, media_type="text/html; charset=utf-8")
 
     # Vercel serves public/ statically in production; these two routes keep
     # local `uvicorn` working without exposing the rest of the directory.

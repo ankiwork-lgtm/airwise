@@ -7,6 +7,7 @@ from hypothesis import strategies as st
 
 from airwise.config import AQ_URL, GEOCODE_URL
 from airwise.main import create_app, get_http_client
+from airwise.services.aqi import clear_cache
 
 
 def make_handler(*, geocode=None, aq=None, calls=None):
@@ -159,6 +160,7 @@ non_numeric = st.text(alphabet="xyzXYZ!@#", min_size=1, max_size=8)
 @settings(max_examples=100, deadline=None)
 @given(lat=good_lat, lon=good_lon)
 def test_property_valid_coordinates_accepted(lat, lon):
+    clear_cache()  # the fixture runs once per test, not per Hypothesis example
     calls: list[str] = []
     with make_client(make_handler(aq=AQ_OK, calls=calls)) as c:
         r = c.get("/api/aqi", params={"lat": lat, "lon": lon})

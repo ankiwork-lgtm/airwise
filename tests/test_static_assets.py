@@ -1,7 +1,12 @@
 """T3.6: app.css / app.js are served from explicit routes, with security headers."""
 
-import pytest
+import logging
 
+import pytest
+from fastapi.testclient import TestClient
+
+import airwise.main as main_module
+from airwise.main import create_app
 from tests.frontend import CSS, HTML, JS
 from tests.test_security_headers import _assert_headers
 
@@ -50,6 +55,48 @@ def test_index_references_assets(client):
     assert r.text == HTML
     assert 'href="/app.css"' in r.text
     assert 'src="/app.js"' in r.text
+
+
+def test_index_repeated_requests_return_identical_bodies(client):
+    first = client.get("/")
+    second = client.get("/")
+    for r in (first, second):
+        assert r.status_code == 200
+        assert r.headers["content-type"] == "text/html; charset=utf-8"
+        assert r.text == HTML
+        _assert_headers(r)
+    assert first.content == second.content
+
+
+def test_index_is_served_from_disk_not_cached_in_memory(client, monkeypatch, tmp_path):
+    """Editing index.html is reflected on the next request (no stale page under --reload)."""
+    page = tmp_path / "index.html"
+    monkeypatch.setattr(main_module, "INDEX_PATH", page)
+    page.write_text("<p>one</p>", encoding="utf-8")
+    assert client.get("/").text == "<p>one</p>"
+    page.write_text("<p>two</p>", encoding="utf-8")
+    assert client.get("/").text == "<p>two</p>"
+
+
+def test_index_missing_file_returns_generic_500_without_leaks(monkeypatch, tmp_path, caplog):
+    missing = tmp_path / "gone" / "index.html"
+    monkeypatch.setattr(main_module, "INDEX_PATH", missing)
+    caplog.set_level(logging.DEBUG)
+    with TestClient(create_app(), raise_server_exceptions=False) as c:
+        r = c.get("/")
+    assert r.status_code == 500
+    assert r.json() == {
+        "error": {"code": "server_error", "message": "Internal server error.", "fields": []}
+    }
+    for text in (r.text, str(dict(r.headers))):
+        assert str(missing) not in text
+        assert "gone" not in text
+        assert "FileNotFoundError" not in text
+        assert "RuntimeError" not in text
+        assert "does not exist" not in text
+    _assert_headers(r)
+    logged = "\n".join(rec.getMessage() for rec in caplog.records)
+    assert str(missing) not in logged
 
 
 def test_app_js_content_sanity():

@@ -122,6 +122,8 @@ These behaviors depend on the browser and are not covered by automated tests. Ch
   What this means: the chat model answers from whatever the caller supplied, so figures in a chat reply are only as trustworthy as that input. The reply goes back to the same caller, and the per-IP chat limit, the 64 KB body limit and the prompt rules (treat supplied strings as data, never invent numbers, stay on topic) bound the cost and the effect. There is no cross-user exposure, because nothing is stored or shared.
   Not done: signing the plan on the server, or recomputing it from the profile and reading. Either would change the request format and the frontend.
 - Worst-case sequential latency (8 s + 8 s + 20 s) exceeds `maxDuration` of 30 s. A 28 s request deadline shortens the LLM timeout in that case.
+- The app closes its shared HTTP clients on shutdown through a lifespan handler. On Vercel serverless the process may be frozen without a shutdown, which is harmless.
+- Geocode and air-quality lookups are cached in memory for about 5 minutes (at most 256 entries each), per instance and not shared between instances. A reading can therefore be up to 5 minutes old.
 - English only, and India only (CPCB bands, indicative GRAP stages, Indian cities).
 
 ## Disclaimer

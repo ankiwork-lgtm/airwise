@@ -90,21 +90,21 @@ Legend: `[ ]` to do, `[x]` done. "Needs input" means the task is blocked on an o
 
 ## Phase 4: Efficiency
 
-- [ ] **T4.1 Reuse one LLM HTTP client**
+- [x] **T4.1 Reuse one LLM HTTP client**
   - In `airwise/services/llm.py`, create the `httpx.AsyncClient` lazily and reuse it.
   - Pass the per-call timeout on the request.
   - Keep the `_TRANSPORT` hook working so existing tests still pass.
   - Add a test that two calls reuse one client.
-- [ ] **T4.2 Close shared clients on shutdown**
+- [x] **T4.2 Close shared clients on shutdown**
   - Add a FastAPI lifespan handler in `airwise/main.py` that closes the Open-Meteo and LLM clients.
-- [ ] **T4.3 Cache `index.html`**
+- [x] **T4.3 Cache `index.html`**
   - Read it once instead of on every `/` request in `airwise/main.py`.
-- [ ] **T4.4 Add a TTL cache for geocode and PM lookups**
+- [x] **T4.4 Add a TTL cache for geocode and PM lookups**
   - Add a small bounded cache (about 5 minutes) in `airwise/services/aqi.py`.
   - Key by city (normalised) or rounded coordinates.
   - Reset the cache in `tests/conftest.py`.
   - Add a test that a repeated lookup calls upstream once and that entries expire.
-- [ ] **T4.5 Review LLM output size**
+- [x] **T4.5 Review LLM output size** (skipped: needs a real LLM API key; not measured)
   - Measure typical plan token use and adjust `MAX_OUTPUT_TOKENS` or the prompt if justified.
   - Needs a real key; skip if unavailable and note it.
 

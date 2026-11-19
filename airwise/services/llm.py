@@ -14,6 +14,37 @@ from airwise.models import AirReading, HouseholdProfile, ImpactRow
 ANTHROPIC_VERSION = "2023-06-01"
 MAX_OUTPUT_TOKENS = 2048
 _TRANSPORT: httpx.AsyncBaseTransport | None = None  # tests inject httpx.MockTransport
+_LIMITS = httpx.Limits(max_connections=20, max_keepalive_connections=10)
+
+# (loop, transport, client) of the shared client. An AsyncClient is bound to the event loop it
+# is first used in, so it is only reused for that same, still-open loop and transport.
+_shared: (
+    tuple[asyncio.AbstractEventLoop, httpx.AsyncBaseTransport | None, httpx.AsyncClient] | None
+) = None
+
+
+def _get_client() -> httpx.AsyncClient:
+    """Return the shared client, creating it lazily. Must be called inside a running loop."""
+    global _shared
+    loop = asyncio.get_running_loop()
+    if _shared is not None:
+        old_loop, old_transport, client = _shared
+        if old_loop is loop and not old_loop.is_closed() and old_transport is _TRANSPORT:
+            return client
+        # Other loop or transport: drop it. It cannot be awaited from here (its loop may be
+        # closed); the process-level aclose_llm_client() closes the live one on shutdown.
+        _shared = None
+    client = httpx.AsyncClient(transport=_TRANSPORT, limits=_LIMITS)
+    _shared = (loop, _TRANSPORT, client)
+    return client
+
+
+async def aclose_llm_client() -> None:
+    """Close and forget the shared client, if any. Safe to call repeatedly."""
+    global _shared
+    shared, _shared = _shared, None
+    if shared is not None and shared[0] is asyncio.get_running_loop():
+        await shared[2].aclose()
 
 
 class LLMUnavailable(Exception):
@@ -40,34 +71,34 @@ class AnthropicClient:
         if not key:
             raise LLMUnavailable("LLM is not configured.")
         try:
-            async with httpx.AsyncClient(timeout=timeout_s, transport=_TRANSPORT) as client:
-                response = await asyncio.wait_for(
-                    client.post(
-                        f"{anthropic_base_url()}/messages",
-                        headers={
-                            "x-api-key": key,
-                            "anthropic-version": ANTHROPIC_VERSION,
-                            "content-type": "application/json",
-                        },
-                        json={
-                            "model": llm_model(),
-                            "max_tokens": MAX_OUTPUT_TOKENS,
-                            "system": system,
-                            "messages": [{"role": "user", "content": user}],
-                            "tools": [
-                                {
-                                    "name": schema_name,
-                                    "description": "Return the answer as structured JSON.",
-                                    "input_schema": schema,
-                                }
-                            ],
-                            "tool_choice": {"type": "tool", "name": schema_name},
-                        },
-                    ),
+            response = await asyncio.wait_for(
+                _get_client().post(
+                    f"{anthropic_base_url()}/messages",
+                    headers={
+                        "x-api-key": key,
+                        "anthropic-version": ANTHROPIC_VERSION,
+                        "content-type": "application/json",
+                    },
+                    json={
+                        "model": llm_model(),
+                        "max_tokens": MAX_OUTPUT_TOKENS,
+                        "system": system,
+                        "messages": [{"role": "user", "content": user}],
+                        "tools": [
+                            {
+                                "name": schema_name,
+                                "description": "Return the answer as structured JSON.",
+                                "input_schema": schema,
+                            }
+                        ],
+                        "tool_choice": {"type": "tool", "name": schema_name},
+                    },
                     timeout=timeout_s,
-                )
-                response.raise_for_status()
-                blocks = response.json()["content"]
+                ),
+                timeout=timeout_s,
+            )
+            response.raise_for_status()
+            blocks = response.json()["content"]
             data = next(b["input"] for b in blocks if b.get("type") == "tool_use")
         except LLMUnavailable:
             raise

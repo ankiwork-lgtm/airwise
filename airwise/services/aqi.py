@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal, NamedTuple
+import time
+from collections.abc import Callable, Hashable
+from typing import Any, Generic, Literal, NamedTuple, TypeVar
 
 import httpx
 
@@ -11,6 +13,8 @@ from airwise.config import (
     ESTIMATED_PM10,
     ESTIMATED_PM25,
     GEOCODE_URL,
+    LOOKUP_CACHE_MAX_ENTRIES,
+    LOOKUP_CACHE_TTL_S,
     OPEN_METEO_TIMEOUT_S,
 )
 from airwise.errors import CityNotFound, InvalidCity, LookupUnavailable
@@ -98,6 +102,53 @@ class Place(NamedTuple):
     longitude: float
 
 
+_V = TypeVar("_V")
+_clock: Callable[[], float] = time.monotonic  # tests patch this
+
+
+class _TTLCache(Generic[_V]):
+    """Tiny in-memory TTL cache. Values must be immutable (they are shared with callers).
+
+    Every entry has the same TTL, so insertion order is also expiry order: expired entries
+    sit at the front and the front is the oldest entry to evict when the cache is full.
+    """
+
+    def __init__(self) -> None:
+        self._items: dict[Hashable, tuple[float, _V]] = {}
+
+    def get(self, key: Hashable) -> _V | None:
+        item = self._items.get(key)
+        if item is None or item[0] <= _clock():
+            self._items.pop(key, None)
+            return None
+        return item[1]
+
+    def put(self, key: Hashable, value: _V) -> None:
+        now = _clock()
+        self._items.pop(key, None)  # re-insert at the end
+        while self._items:
+            oldest = next(iter(self._items))
+            if self._items[oldest][0] <= now or len(self._items) >= LOOKUP_CACHE_MAX_ENTRIES:
+                del self._items[oldest]
+            else:
+                break
+        self._items[key] = (now + LOOKUP_CACHE_TTL_S, value)
+
+    def clear(self) -> None:
+        self._items.clear()
+
+
+_PM = tuple[float | None, float | None]
+_places: _TTLCache[Place] = _TTLCache()
+_pm_readings: _TTLCache[_PM] = _TTLCache()
+
+
+def clear_cache() -> None:
+    """Drop all cached geocode and PM lookups (used by tests)."""
+    _places.clear()
+    _pm_readings.clear()
+
+
 def _num(value: Any) -> float | None:
     """Return a finite, in-range PM value or None."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -143,7 +194,17 @@ def estimated_reading(name: str, lat: float | None, lon: float | None) -> AirRea
 
 
 async def geocode(client: httpx.AsyncClient, city: str) -> Place:
-    """Resolve a city to its top-ranked Indian match."""
+    """Resolve a city to its top-ranked Indian match. Successful lookups are cached."""
+    key = " ".join(city.split()).casefold()
+    cached = _places.get(key)
+    if cached is not None:
+        return cached
+    place = await _geocode_upstream(client, city)
+    _places.put(key, place)
+    return place
+
+
+async def _geocode_upstream(client: httpx.AsyncClient, city: str) -> Place:
     params: dict[str, str | int] = {
         "name": city,
         "count": 1,
@@ -175,7 +236,23 @@ async def geocode(client: httpx.AsyncClient, city: str) -> Place:
 async def fetch_pm(
     client: httpx.AsyncClient, lat: float, lon: float
 ) -> tuple[float | None, float | None]:
-    """Fetch current PM2.5 and PM10. Raises httpx.HTTPError or ValueError on failure."""
+    """Fetch current PM2.5 and PM10. Raises httpx.HTTPError or ValueError on failure.
+
+    Results are cached by coordinates rounded to 2 decimals (about 1 km); a result with
+    no usable value is not cached."""
+    key = (round(lat, 2), round(lon, 2))
+    cached = _pm_readings.get(key)
+    if cached is not None:
+        return cached
+    pm = await _fetch_pm_upstream(client, lat, lon)
+    if pm != (None, None):
+        _pm_readings.put(key, pm)
+    return pm
+
+
+async def _fetch_pm_upstream(
+    client: httpx.AsyncClient, lat: float, lon: float
+) -> tuple[float | None, float | None]:
     params: dict[str, str | float] = {"latitude": lat, "longitude": lon, "current": "pm2_5,pm10"}
     resp = await client.get(AQ_URL, params=params, timeout=OPEN_METEO_TIMEOUT_S)
     resp.raise_for_status()
