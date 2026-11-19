@@ -33,7 +33,7 @@ class StubLLM:
 
 
 def _run(req: ChatRequest, llm: StubLLM):
-    with mock.patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
+    with mock.patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
         return asyncio.run(answer(req, llm=llm, deadline=Deadline()))
 
 

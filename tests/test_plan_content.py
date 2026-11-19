@@ -104,7 +104,7 @@ def test_fallback_plan_content_guarantees(profile, reading):
 @given(profiles(), readings(), _llm_raw)
 def test_llm_plan_content_guarantees(profile, reading, raw):
     """**Validates: Requirements 3.4, 6.8, 6.9**"""
-    with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
+    with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
         plan = asyncio.run(
             generate_plan(profile, reading, llm=_FakeLLM(raw), deadline=Deadline())
         )

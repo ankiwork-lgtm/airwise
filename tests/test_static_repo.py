@@ -13,12 +13,13 @@ def test_no_requirements_txt():
 
 def test_env_example_lists_vars_without_real_key():
     text = (ROOT / ".env.example").read_text(encoding="utf-8")
-    assert re.search(r"^OPENAI_API_KEY=", text, re.M)
-    assert re.search(r"^OPENAI_MODEL=", text, re.M)
-    value = re.search(r"^OPENAI_API_KEY=(.*)$", text, re.M).group(1).strip()
+    assert re.search(r"^ANTHROPIC_API_KEY=", text, re.M)
+    assert re.search(r"^ANTHROPIC_BASE_URL=", text, re.M)
+    assert re.search(r"^LLM_MODEL=", text, re.M)
+    value = re.search(r"^ANTHROPIC_API_KEY=(.*)$", text, re.M).group(1).strip()
     # Placeholder only: no long key-like token.
     assert not re.search(r"sk-[A-Za-z0-9_\-]{20,}", text)
-    assert value == "" or "your" in value.lower() or "here" in value.lower()
+    assert value in ("", "sk-") or "your" in value.lower() or "here" in value.lower()
 
 
 def test_vercel_json_rewrite_and_duration():
@@ -36,4 +37,4 @@ def test_pyproject_declares_runtime_dependencies():
         for item in block.splitlines()
         if item.strip().strip(",")
     }
-    assert {"fastapi", "httpx", "openai", "pydantic"} <= names
+    assert {"fastapi", "httpx", "pydantic"} <= names

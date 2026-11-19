@@ -64,7 +64,7 @@ def _client(calls, llm=None):
 
 
 def test_valid_llm_response_has_full_single_response_shape(monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     llm = RecordingLLM()
     calls: list[str] = []
     with _client(calls, llm) as c:
@@ -87,7 +87,7 @@ def test_valid_llm_response_has_full_single_response_shape(monkeypatch):
 
 
 def test_llm_request_carries_table_ids_and_json_schema_format(monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     llm = RecordingLLM()
     with _client([], llm) as c:
         r = c.post("/api/plan", json={"profile": VALID_PROFILE})
@@ -105,40 +105,38 @@ def test_llm_request_carries_table_ids_and_json_schema_format(monkeypatch):
     assert cited["impact"] is not None
 
 
-def test_openai_client_sends_json_schema_response_format(monkeypatch):
-    """Through the real OpenAIClient (SDK stubbed), the request uses a strict json_schema format."""
-    from types import SimpleNamespace
-
+def test_anthropic_client_sends_forced_tool_with_plan_schema(monkeypatch):
+    """Through the real AnthropicClient (HTTP stubbed), the request forces a tool whose input_schema is the plan schema."""
+    import httpx
     from airwise.services import llm as llm_module
 
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     seen = {}
     inner = RecordingLLM()
 
-    class FakeCompletions:
-        async def create(self, **kwargs):
-            seen.update(kwargs)
-            data = await inner.complete_json(user=kwargs["messages"][1]["content"])
-            msg = SimpleNamespace(content=json.dumps(data))
-            return SimpleNamespace(choices=[SimpleNamespace(message=msg)])
+    async def handler(request):
+        body = json.loads(request.content)
+        seen.update(body)
+        seen["url"] = str(request.url)
+        data = await inner.complete_json(user=body["messages"][0]["content"])
+        return httpx.Response(
+            200, json={"content": [{"type": "tool_use", "name": body["tool_choice"]["name"], "input": data}]}
+        )
 
-    class FakeAsyncOpenAI:
-        def __init__(self, **kwargs):
-            self.chat = SimpleNamespace(completions=FakeCompletions())
+    monkeypatch.setattr(llm_module, "_TRANSPORT", httpx.MockTransport(handler))
 
-    monkeypatch.setattr(llm_module, "AsyncOpenAI", FakeAsyncOpenAI)
     from airwise.main import get_llm_client
 
     c = make_client(make_handler(geocode=GEO_OK, aq=AQ_OK))
-    c.app.dependency_overrides[get_llm_client] = llm_module.OpenAIClient
+    c.app.dependency_overrides[get_llm_client] = llm_module.AnthropicClient
     with c:
         r = c.post("/api/plan", json={"profile": VALID_PROFILE})
     assert r.status_code == 200
     assert r.json()["plan"]["fallback"] is False
-    fmt = seen["response_format"]
-    assert fmt["type"] == "json_schema"
-    assert fmt["json_schema"]["strict"] is True
-    assert fmt["json_schema"]["schema"] == PLAN_JSON_SCHEMA
+    tool = seen["tools"][0]
+    assert seen["tool_choice"] == {"type": "tool", "name": tool["name"]}
+    assert tool["input_schema"] == PLAN_JSON_SCHEMA
+    assert seen["url"].endswith("/messages")
 
 
 def test_out_of_range_latitude_names_field_and_skips_aqi_service():

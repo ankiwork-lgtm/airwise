@@ -11,7 +11,7 @@ The backend is a Python FastAPI app deployed as a single Vercel serverless funct
 - Household profile form (kids, elderly, respiratory condition, commute, cooking fuel, heating, purifier, window ventilation), saved in the browser's localStorage.
 - Deterministic impact table: estimated exposure reduction and CO2 kg/day saved per action, plus an overall exposure score. The language model only explains these figures and never invents numbers.
 - Personalized plan (daily routine, indoor hacks, sustainable swaps, vulnerable-members note) with a "why it matters" line for each item.
-- Rule-based fallback plan when the OpenAI key is missing or the LLM call fails, times out, or returns invalid output.
+- Rule-based fallback plan when the Anthropic key is missing or the LLM call fails, times out, or returns invalid output.
 - Stateless follow-up chat about the plan, with suggested starter questions.
 - Input validation, a 64 KB request size limit, and per-IP rate limiting (10 plan requests and 30 chat requests per 60 seconds).
 
@@ -25,7 +25,7 @@ The backend is a Python FastAPI app deployed as a single Vercel serverless funct
    ```
    pip install -e ".[dev]"
    ```
-4. Copy `.env.example` to `.env` and set `OPENAI_API_KEY`. Export the variables into your shell, because the app reads process environment variables only. Without a key, AirWise still runs and returns rule-based fallback plans.
+4. Copy `.env.example` to `.env` and set `ANTHROPIC_API_KEY` (and `ANTHROPIC_BASE_URL` if you use a gateway). The app loads `.env` at startup, and its values override variables already set in your shell. When there is no `.env` (for example on Vercel), it uses the process environment. Restart the server after editing `.env`. Without a key, AirWise still runs and returns rule-based fallback plans.
 5. Start the server:
    ```
    uvicorn airwise.main:create_app --factory
@@ -38,8 +38,9 @@ These are all the variables defined in `.env.example`.
 
 | Name | Required or optional | Purpose | Default |
 | --- | --- | --- | --- |
-| `OPENAI_API_KEY` | Required for AI-personalized plans and chat. Optional to run the app: without it, plans use the rule-based fallback and chat reports that answers are unavailable. | API key for the OpenAI chat completions API. Read from the process environment only. | None |
-| `OPENAI_MODEL` | Optional | OpenAI model used for plans and chat. | `gpt-4o-mini` (also used when the variable is empty) |
+| `ANTHROPIC_API_KEY` | Required for AI-personalized plans and chat. Optional to run the app: without it, plans use the rule-based fallback and chat reports that answers are unavailable. | API key for the Anthropic Messages API (or a compatible gateway). Read from `.env` when present, otherwise from the process environment. | None |
+| `ANTHROPIC_BASE_URL` | Optional | Base URL of the Messages API, ending before `/messages` (for example `https://api.servicesessentials.ibm.com/v1`). | `https://api.anthropic.com/v1` |
+| `LLM_MODEL` | Optional | Model name sent to the Messages API. | `claude-haiku-5-5` |
 
 Never commit a real key. `.env.example` holds a placeholder only.
 
@@ -51,13 +52,13 @@ From the repository root, with the virtual environment active:
 pytest
 ```
 
-The tests mock the Open-Meteo and OpenAI APIs, make no network calls, and need no OpenAI key.
+The tests mock the Open-Meteo and Anthropic APIs, make no network calls, and need no Anthropic key.
 
 ## Deploying to Vercel
 
 1. Push the repository to GitHub, GitLab, or Bitbucket and import it as a new project in Vercel. No build command is needed.
-2. In Project Settings, then Environment Variables, add `OPENAI_API_KEY` with your OpenAI key.
-3. Optionally add `OPENAI_MODEL`. If you do not set it, AirWise uses the default model `gpt-4o-mini`.
+2. In Project Settings, then Environment Variables, add `ANTHROPIC_API_KEY` with your key, and `ANTHROPIC_BASE_URL` if you use a gateway.
+3. Optionally add `LLM_MODEL`. If you do not set it, AirWise uses the default model `claude-haiku-5-5`.
 4. Deploy. `vercel.json` routes `/api/*` to the `api/index.py` function (`maxDuration` 30 seconds) and serves the page from `public/`.
 5. Confirm the deployment: open `/api/health` and check that it returns a healthy response, then open the root page and generate a plan for a city.
 

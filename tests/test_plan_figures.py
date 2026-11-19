@@ -35,7 +35,7 @@ def _all_items(plan):
 )
 @given(profile=profiles(), reading=readings(), data=st.data())
 def test_plan_figures_equal_table(monkeypatch, profile, reading, data):
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     impact = compute_impact(profile, reading)
     table = {r.id: r for r in impact.rows}
     payload = data.draw(llm_plans(valid_ids=list(table)))
@@ -67,7 +67,7 @@ def test_plan_figures_equal_table(monkeypatch, profile, reading, data):
 )
 @given(profile=profiles(), reading=readings(), data=st.data())
 def test_plan_figures_equal_table_valid_llm_output(monkeypatch, profile, reading, data):
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     impact = compute_impact(profile, reading)
     table = {r.id: r for r in impact.rows}
     payload = data.draw(llm_plans(valid_ids=list(table), allow_extra_keys=False))

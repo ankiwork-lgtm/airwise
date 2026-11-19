@@ -11,12 +11,12 @@ Some scaffold files may already exist from an earlier draft (`pyproject.toml`, `
 - [x] 1. Project skeleton with a working health endpoint
   - [x] 1.1 Review and align the scaffold and verify the environment
     - Read the existing `pyproject.toml`, `vercel.json`, `.env.example`, and `.gitignore`. Align them with the design instead of recreating them.
-    - `pyproject.toml`: runtime dependencies `fastapi`, `httpx`, `openai`, `pydantic`; `dev` extra `pytest>=8.0`, `uvicorn>=0.29`, `hypothesis>=6.100`; a `[tool.pytest.ini_options]` section with `testpaths = ["tests"]`. Do not create `requirements.txt`.
+    - `pyproject.toml`: runtime dependencies `fastapi`, `httpx`, `pydantic`; `dev` extra `pytest>=8.0`, `uvicorn>=0.29`, `hypothesis>=6.100`; a `[tool.pytest.ini_options]` section with `testpaths = ["tests"]`. Do not create `requirements.txt`.
     - `vercel.json`: rewrite `/api/(.*)` to `/api/index`, `functions."api/index.py".maxDuration` of 30, `includeFiles` of `public/**`.
-    - `.env.example`: names `OPENAI_API_KEY` and `OPENAI_MODEL` with empty or placeholder values and no real credential.
+    - `.env.example`: names `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, and `LLM_MODEL` with empty or placeholder values and no real credential.
     - `.gitignore`: exclude `.env`, virtual environments, `__pycache__`, `.pytest_cache`, `.hypothesis`, and `.vercel`.
     - Verify installation: create a virtual environment and run `pip install -e ".[dev]"`. Local Python is 3.15 and some packages (for example `pydantic-core`) may lack wheels. If installation fails, recreate the environment with Python 3.12 (for example `py -3.12 -m venv .venv`), reinstall, and record the working version in a `requires-python` bound in `pyproject.toml` and in the README task later.
-    - Confirm `import fastapi, httpx, openai, pydantic, hypothesis` succeeds in the chosen environment.
+    - Confirm `import fastapi, httpx, pydantic, hypothesis` succeeds in the chosen environment.
     - _Requirements: 11.5, 12.3, 12.4, 12.8_
 
   - [x] 1.2 Create the app skeleton and health endpoint
@@ -24,12 +24,12 @@ Some scaffold files may already exist from an earlier draft (`pyproject.toml`, `
     - Create `airwise/main.py` with `create_app()`, `GET /api/health` returning `{"status": "ok"}`, `GET /` returning the contents of `public/index.html`, and exception handlers for `AppError` and `RequestValidationError` that produce the `{"error": {"code", "message", "fields"}}` body without echoing submitted values.
     - Create `api/index.py` with `from airwise.main import app`.
     - Create a placeholder `public/index.html` (title, heading, disclaimer text, no external resources).
-    - Create `tests/__init__.py` (if needed) and `tests/conftest.py` with an autouse fixture that removes `OPENAI_API_KEY` and `OPENAI_MODEL` from the environment and patches `socket.socket.connect` to raise, plus a `client` fixture built from `create_app()`.
+    - Create `tests/__init__.py` (if needed) and `tests/conftest.py` with an autouse fixture that removes `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, and `LLM_MODEL` from the environment and patches `socket.socket.connect` to raise, plus a `client` fixture built from `create_app()`.
     - Demo: `uvicorn airwise.main:create_app --factory` serves `/api/health` and `/`.
     - _Requirements: 9.1, 11.6, 12.1, 12.2, 12.5, 13.2_
 
   - [x] 1.3 Write static repository checks and health test
-    - `tests/test_static_repo.py`: `requirements.txt` does not exist, `.env.example` lists `OPENAI_API_KEY` and `OPENAI_MODEL` with no real key, `vercel.json` has the rewrite and `LLM_TIMEOUT_S + 2 <= maxDuration`, `pyproject.toml` declares the four runtime dependencies.
+    - `tests/test_static_repo.py`: `requirements.txt` does not exist, `.env.example` lists `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, and `LLM_MODEL` with no real key, `vercel.json` has the rewrite and `LLM_TIMEOUT_S + 2 <= maxDuration`, `pyproject.toml` declares the three runtime dependencies.
     - `tests/test_health.py`: `GET /api/health` returns 200 and `{"status": "ok"}`; `GET /` returns HTML.
     - _Requirements: 11.5, 12.3, 12.4, 12.8, 13.1_
 
@@ -115,14 +115,14 @@ Some scaffold files may already exist from an earlier draft (`pyproject.toml`, `
     - _Requirements: 6.2, 6.4, 6.12, 9.3, 9.4, 9.5_
 
   - [x] 5.2 Implement the LLM client and deadline helper
-    - Create `airwise/services/llm.py` with the `LLMClient` protocol, `LLMUnavailable`, and `OpenAIClient` (`AsyncOpenAI` with `max_retries=0`, strict `json_schema` response format, `asyncio.wait_for`, key and model read from the environment at call time, no key in messages). Add `PLAN_JSON_SCHEMA` and the system and user prompt builders, with untrusted text passed inside a JSON object.
+    - Create `airwise/services/llm.py` with the `LLMClient` protocol, `LLMUnavailable`, and `AnthropicClient` (`httpx` POST to `{ANTHROPIC_BASE_URL}/messages`, no retries, forced tool call with the schema as `input_schema`, `asyncio.wait_for`, key and model read from the environment at call time, no key in messages). Add `PLAN_JSON_SCHEMA` and the system and user prompt builders, with untrusted text passed inside a JSON object.
     - Add the pure `Deadline` helper (remaining time, planned LLM timeout `min(LLM_TIMEOUT_S, remaining - 1)`, skip when under `LLM_MIN_BUDGET_S`) to `airwise/config.py`.
     - _Requirements: 6.1, 6.2, 6.3, 6.10, 11.1, 11.2, 12.6, 12.7, 12.8_
 
   - [x] 5.3 Write property test for the time budget
     - **Property 22: LLM time budget stays inside the function limit**
     - **Validates: Requirements 12.6, 12.8**
-    - Add example tests for `OpenAIClient` argument construction with the SDK class monkeypatched, and for the `gpt-4o-mini` default when `OPENAI_MODEL` is unset or empty.
+    - Add example tests for `AnthropicClient` argument construction with `httpx.MockTransport`, and for the `claude-haiku-5-5` default when `LLM_MODEL` is unset or empty.
     - _Requirements: 6.10_
 
   - [x] 5.4 Implement the Fallback_Plan builder
@@ -254,7 +254,7 @@ Some scaffold files may already exist from an earlier draft (`pyproject.toml`, `
     - _Requirements: 11.2, 11.6, 11.7, 13.1_
 
   - [x] 9.7 Write the README
-    - Create `README.md` with sections: feature set, local setup (numbered steps with the supported Python version found in task 1.1, install command, and the uvicorn start command), environment variables (name, required or optional, purpose, default for `OPENAI_API_KEY` and `OPENAI_MODEL`), running pytest (exact command from the repository root), Vercel deployment (numbered steps: import the repository, set `OPENAI_API_KEY`, optionally set `OPENAI_MODEL`, deploy, confirm via `/api/health` and the page, and state the default model `gpt-4o-mini`), the manual browser checklist from the design, known limits, and a disclaimer section (figures approximate, GRAP stage indicative, no medical advice).
+    - Create `README.md` with sections: feature set, local setup (numbered steps with the supported Python version found in task 1.1, install command, and the uvicorn start command), environment variables (name, required or optional, purpose, default for `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, and `LLM_MODEL`), running pytest (exact command from the repository root), Vercel deployment (numbered steps: import the repository, set `ANTHROPIC_API_KEY`, optionally set `LLM_MODEL`, deploy, confirm via `/api/health` and the page, and state the default model `claude-haiku-5-5`), the manual browser checklist from the design, known limits, and a disclaimer section (figures approximate, GRAP stage indicative, no medical advice).
     - _Requirements: 14.1, 14.2, 14.3, 14.4, 14.5, 14.6, 14.7_
 
 - [x] 10. Final checkpoint - Ensure all tests pass

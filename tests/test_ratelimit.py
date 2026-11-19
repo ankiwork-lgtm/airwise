@@ -136,7 +136,7 @@ def _plan_client(llm):
 
 
 def test_eleventh_plan_request_is_429_with_retry_after(monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     llm = PlanLLM()
     with _plan_client(llm) as c:
         for _ in range(10):
@@ -148,7 +148,7 @@ def test_eleventh_plan_request_is_429_with_retry_after(monkeypatch):
 
 
 def test_plan_and_chat_quotas_are_independent(monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     app = create_app()
     app.dependency_overrides[get_llm_client] = lambda: ChatLLM()
     from fastapi.testclient import TestClient

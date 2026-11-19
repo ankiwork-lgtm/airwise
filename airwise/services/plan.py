@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pydantic import ValidationError
 
-from airwise.config import Deadline, openai_api_key
+from airwise.config import Deadline, anthropic_api_key
 from airwise.models import (
     AirReading,
     HouseholdProfile,
@@ -119,7 +119,7 @@ async def generate_plan(
     deadline: Deadline,
 ) -> Plan:
     impact = compute_impact(profile, reading)
-    if not openai_api_key() or deadline.should_skip_llm():
+    if not anthropic_api_key() or deadline.should_skip_llm():
         return build_fallback_plan(profile, reading, impact)
 
     try:

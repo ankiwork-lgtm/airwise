@@ -88,7 +88,7 @@ def _client(llm: RecordingLLM) -> TestClient:
 
 
 def test_statelessness_same_request_same_llm_payload(monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     llm = RecordingLLM()
     payload = valid_payload(history=[{"role": "user", "content": "Hi"}])
     with _client(llm) as c:
@@ -113,7 +113,7 @@ def test_missing_key_returns_failure_message_without_llm_call():
 
 
 def test_llm_error_returns_failure_message(monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     llm = RecordingLLM(exc=RuntimeError("boom"))
     with _client(llm) as c:
         r = c.post("/api/chat", json=valid_payload())
@@ -123,7 +123,7 @@ def test_llm_error_returns_failure_message(monkeypatch):
 
 
 def test_llm_timeout_returns_failure_message(monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     llm = RecordingLLM(exc=TimeoutError())
     with _client(llm) as c:
         r = c.post("/api/chat", json=valid_payload())
@@ -133,7 +133,7 @@ def test_llm_timeout_returns_failure_message(monkeypatch):
 
 
 def test_off_topic_message_gets_fixed_reply(monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     llm = RecordingLLM({"reply": "Paris is the capital.", "on_topic": False, "discusses_health": False})
     with _client(llm) as c:
         r = c.post("/api/chat", json=valid_payload("What is the capital of France?"))
@@ -143,7 +143,7 @@ def test_off_topic_message_gets_fixed_reply(monkeypatch):
 
 
 def test_out_of_scope_message_declined_without_llm_call(monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     llm = RecordingLLM()
     with _client(llm) as c:
         r = c.post("/api/chat", json=valid_payload("Can you diagnose my cough?"))

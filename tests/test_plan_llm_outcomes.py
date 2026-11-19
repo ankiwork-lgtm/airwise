@@ -79,21 +79,21 @@ def _break(plan: dict, how: str) -> dict:
 
 
 def _set_key(mode: str):
-    old = os.environ.get("OPENAI_API_KEY")
+    old = os.environ.get("ANTHROPIC_API_KEY")
     if mode == "set":
-        os.environ["OPENAI_API_KEY"] = "test-key"
+        os.environ["ANTHROPIC_API_KEY"] = "test-key"
     elif mode == "empty":
-        os.environ["OPENAI_API_KEY"] = ""
+        os.environ["ANTHROPIC_API_KEY"] = ""
     else:
-        os.environ.pop("OPENAI_API_KEY", None)
+        os.environ.pop("ANTHROPIC_API_KEY", None)
     return old
 
 
 def _restore_key(old):
     if old is None:
-        os.environ.pop("OPENAI_API_KEY", None)
+        os.environ.pop("ANTHROPIC_API_KEY", None)
     else:
-        os.environ["OPENAI_API_KEY"] = old
+        os.environ["ANTHROPIC_API_KEY"] = old
 
 
 # Feature: airwise, Property 13: LLM outcomes map to a valid Plan with at most one call

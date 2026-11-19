@@ -1,14 +1,19 @@
-"""LLM client protocol, OpenAI implementation, plan schema, and prompt builders."""
+"""LLM client protocol, Anthropic implementation, plan schema, and prompt builders."""
 from __future__ import annotations
 
 import asyncio
 import json
 from typing import Any, Protocol
 
-from openai import AsyncOpenAI
+import httpx
 
-from airwise.config import openai_api_key, openai_model
+from airwise.config import anthropic_api_key, anthropic_base_url, llm_model
 from airwise.models import AirReading, HouseholdProfile, ImpactRow
+
+
+ANTHROPIC_VERSION = "2023-06-01"
+MAX_OUTPUT_TOKENS = 2048
+_TRANSPORT: httpx.AsyncBaseTransport | None = None  # tests inject httpx.MockTransport
 
 
 class LLMUnavailable(Exception):
@@ -21,42 +26,57 @@ class LLMClient(Protocol):
     ) -> dict: ...
 
 
-class OpenAIClient:
-    """One Chat Completions call with strict json_schema output, no retries."""
+class AnthropicClient:
+    """One Messages API call with a forced tool for structured JSON output, no retries."""
 
     async def complete_json(
         self, *, system: str, user: str, schema_name: str, schema: dict, timeout_s: float
     ) -> dict:
-        key = openai_api_key()
+        key = anthropic_api_key()
         if not key:
             raise LLMUnavailable("LLM is not configured.")
         try:
-            client = AsyncOpenAI(api_key=key, timeout=timeout_s, max_retries=0)
-            response = await asyncio.wait_for(
-                client.chat.completions.create(
-                    model=openai_model(),
-                    messages=[
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": user},
-                    ],
-                    response_format={
-                        "type": "json_schema",
-                        "json_schema": {"name": schema_name, "strict": True, "schema": schema},
-                    },
-                    temperature=0.4,
-                ),
-                timeout=timeout_s,
-            )
-            content = response.choices[0].message.content
-            data = json.loads(content or "")
+            async with httpx.AsyncClient(timeout=timeout_s, transport=_TRANSPORT) as client:
+                response = await asyncio.wait_for(
+                    client.post(
+                        f"{anthropic_base_url()}/messages",
+                        headers={
+                            "x-api-key": key,
+                            "anthropic-version": ANTHROPIC_VERSION,
+                            "content-type": "application/json",
+                        },
+                        json={
+                            "model": llm_model(),
+                            "max_tokens": MAX_OUTPUT_TOKENS,
+                            "system": system,
+                            "messages": [{"role": "user", "content": user}],
+                            "tools": [
+                                {
+                                    "name": schema_name,
+                                    "description": "Return the answer as structured JSON.",
+                                    "input_schema": schema,
+                                }
+                            ],
+                            "tool_choice": {"type": "tool", "name": schema_name},
+                        },
+                    ),
+                    timeout=timeout_s,
+                )
+                response.raise_for_status()
+                blocks = response.json()["content"]
+            data = next(b["input"] for b in blocks if b.get("type") == "tool_use")
         except LLMUnavailable:
             raise
-        except Exception as exc:  # timeout, SDK error, bad JSON: report the class only
+        except httpx.HTTPStatusError as exc:
+            detail = exc.response.text[:300].replace("\n", " ")
+            raise LLMUnavailable(
+                f"LLM call failed (HTTPStatusError {exc.response.status_code}): {detail}"
+            ) from None
+        except Exception as exc:  # timeout, bad JSON: report the class only
             raise LLMUnavailable(f"LLM call failed ({type(exc).__name__}).") from None
         if not isinstance(data, dict):
             raise LLMUnavailable("LLM returned a non-object response.")
         return data
-
 
 _NULLABLE_STR = {"type": ["string", "null"]}
 _CONTEXT_FACTORS = [

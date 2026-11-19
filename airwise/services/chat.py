@@ -1,14 +1,17 @@
 """Chat_Service: stateless follow-up answers with a deterministic scope guard."""
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 
 from pydantic import ValidationError
 
-from airwise.config import Deadline, openai_api_key
+from airwise.config import Deadline, anthropic_api_key
 from airwise.models import ChatReply, ChatRequest, LLMChat
 from airwise.services.llm import LLMClient, build_chat_user_prompt, build_system_prompt
+
+logger = logging.getLogger("airwise")
 
 OFF_TOPIC_REPLY = (
     "I can only help with air quality, your plan, and related household questions. "
@@ -95,7 +98,8 @@ def _failure() -> ChatReply:
 async def answer(req: ChatRequest, *, llm: LLMClient, deadline: Deadline) -> ChatReply:
     if out_of_scope(req.message) is not None:
         return ChatReply(reply=SCOPE_DECLINE_REPLY, failed=False)
-    if not openai_api_key() or deadline.should_skip_llm():
+    if not anthropic_api_key() or deadline.should_skip_llm():
+        logger.warning("chat skipped: no ANTHROPIC_API_KEY in environment or time budget exhausted")
         return _failure()
     try:
         raw = await llm.complete_json(
@@ -112,5 +116,6 @@ async def answer(req: ChatRequest, *, llm: LLMClient, deadline: Deadline) -> Cha
         if parsed.discusses_health:
             reply = f"{reply[: 2000 - len(NOT_MEDICAL_ADVICE_NOTE) - 1].rstrip()} {NOT_MEDICAL_ADVICE_NOTE}"
         return ChatReply(reply=reply, failed=False)
-    except (ValidationError, Exception):  # any LLM error, timeout, or invalid output
+    except (ValidationError, Exception) as exc:  # any LLM error, timeout, or invalid output
+        logger.warning("chat LLM call failed: %s: %s", type(exc).__name__, exc)
         return _failure()

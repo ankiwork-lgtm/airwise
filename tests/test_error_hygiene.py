@@ -1,7 +1,7 @@
 """Error handling and secret hygiene: generic 500 body, fake key never leaks."""
 import logging
-from types import SimpleNamespace
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -25,7 +25,7 @@ def _boom_client() -> TestClient:
 
 
 def test_forced_exception_returns_generic_500_without_traceback_or_path(monkeypatch, caplog):
-    monkeypatch.setenv("OPENAI_API_KEY", FAKE_KEY)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", FAKE_KEY)
     caplog.set_level(logging.DEBUG)
     with _boom_client() as c:
         r = c.post("/api/plan", json={"profile": VALID_PROFILE})
@@ -62,7 +62,7 @@ def _assert_no_secret(response, caplog):
 
 
 def test_fake_key_not_in_responses_or_logs_on_success_paths(monkeypatch, caplog):
-    monkeypatch.setenv("OPENAI_API_KEY", FAKE_KEY)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", FAKE_KEY)
     caplog.set_level(logging.DEBUG)
     with make_client(make_handler(geocode=GEO_OK, aq=AQ_OK)) as c:
         for r in (
@@ -77,21 +77,16 @@ def test_fake_key_not_in_responses_or_logs_on_success_paths(monkeypatch, caplog)
 
 def test_fake_key_not_leaked_after_llm_failure(monkeypatch, caplog):
     """SDK raises an error whose text contains the key: plan falls back, chat reports failure."""
-    monkeypatch.setenv("OPENAI_API_KEY", FAKE_KEY)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", FAKE_KEY)
     caplog.set_level(logging.DEBUG)
 
-    class FailingCompletions:
-        async def create(self, **kwargs):
-            raise RuntimeError(f"401 Incorrect API key provided: {FAKE_KEY}")
+    def failing(request):
+        raise RuntimeError(f"401 Incorrect API key provided: {FAKE_KEY}")
 
-    class FailingAsyncOpenAI:
-        def __init__(self, **kwargs):
-            self.chat = SimpleNamespace(completions=FailingCompletions())
-
-    monkeypatch.setattr(llm_module, "AsyncOpenAI", FailingAsyncOpenAI)
+    monkeypatch.setattr(llm_module, "_TRANSPORT", httpx.MockTransport(failing))
 
     c = make_client(make_handler(geocode=GEO_OK, aq=AQ_OK))
-    c.app.dependency_overrides[get_llm_client] = llm_module.OpenAIClient
+    c.app.dependency_overrides[get_llm_client] = llm_module.AnthropicClient
     with c:
         plan_resp = c.post("/api/plan", json={"profile": VALID_PROFILE})
         assert plan_resp.status_code == 200
@@ -117,21 +112,16 @@ def test_fake_key_not_leaked_after_llm_failure(monkeypatch, caplog):
 def test_llm_unavailable_message_has_no_key(monkeypatch):
     import asyncio
 
-    monkeypatch.setenv("OPENAI_API_KEY", FAKE_KEY)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", FAKE_KEY)
 
-    class FailingCompletions:
-        async def create(self, **kwargs):
-            raise RuntimeError(f"bad key {FAKE_KEY}")
+    def failing(request):
+        raise RuntimeError(f"bad key {FAKE_KEY}")
 
-    class FailingAsyncOpenAI:
-        def __init__(self, **kwargs):
-            self.chat = SimpleNamespace(completions=FailingCompletions())
-
-    monkeypatch.setattr(llm_module, "AsyncOpenAI", FailingAsyncOpenAI)
+    monkeypatch.setattr(llm_module, "_TRANSPORT", httpx.MockTransport(failing))
 
     with pytest.raises(llm_module.LLMUnavailable) as info:
         asyncio.run(
-            llm_module.OpenAIClient().complete_json(
+            llm_module.AnthropicClient().complete_json(
                 system="s", user="u", schema_name="n", schema={}, timeout_s=2
             )
         )

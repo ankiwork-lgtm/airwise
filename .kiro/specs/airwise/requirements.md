@@ -28,7 +28,7 @@ The system is a Python FastAPI backend deployed as a Vercel serverless function,
 - **Impact_Table**: A deterministic table computed by the Backend in which each row holds an action, an estimated exposure-reduction percentage, an estimated CO2 kg/day saved, a basis, and a source note, all marked approximate.
 - **Impact_Engine**: The Backend component that computes the Impact_Table and the overall exposure-reduction score using fixed rules.
 - **Exposure_Score**: The overall estimated exposure-reduction percentage for a Plan, computed by the Impact_Engine.
-- **LLM_Client**: The Backend component that calls the OpenAI chat completions API using the OPENAI_API_KEY environment variable and the model named by OPENAI_MODEL (default gpt-4o-mini), requesting structured JSON output.
+- **LLM_Client**: The Backend component that calls the Anthropic Messages API at the URL named by ANTHROPIC_BASE_URL (default https://api.anthropic.com/v1) using the ANTHROPIC_API_KEY environment variable and the model named by LLM_MODEL (default claude-haiku-5-5), requesting structured JSON output.
 - **Fallback_Plan**: A rule-based Plan built from the Impact_Table without the LLM_Client and flagged as fallback.
 - **Chat_Service**: The Backend component that answers follow-up questions about a Plan.
 - **Chat_Request**: A request containing the Plan, Air_Reading, Household_Profile, chat history, and the user message.
@@ -130,8 +130,8 @@ The system is a Python FastAPI backend deployed as a Vercel serverless function,
 7. THE Plan_Generator SHALL replace every impact figure in the returned Plan with the figures from the Impact_Table, regardless of the LLM response content.
 8. WHERE the Household_Profile or the Air_Reading makes a local context factor relevant, THE Plan_Generator SHALL include at least one routine item that addresses that factor, chosen from stubble burning, firecrackers, biomass cooking and heating, two-wheelers, and metro use.
 9. WHERE the Household_Profile includes kids, elderly members, or a respiratory condition, THE Plan_Generator SHALL include a vulnerable-members note of 1 to 500 characters that names each vulnerable group present in the Household_Profile.
-10. THE LLM_Client SHALL read the API key from the OPENAI_API_KEY environment variable and the model name from OPENAI_MODEL, using gpt-4o-mini when OPENAI_MODEL is not set or is empty.
-11. IF the OPENAI_API_KEY environment variable is not set or is empty, THEN THE LLM_Client SHALL make no LLM call, and THE Plan_Generator SHALL return a Fallback_Plan with the fallback flag set to true.
+10. THE LLM_Client SHALL read the API key from the ANTHROPIC_API_KEY environment variable, the base URL from ANTHROPIC_BASE_URL, and the model name from LLM_MODEL, using claude-haiku-5-5 when LLM_MODEL is not set or is empty.
+11. IF the ANTHROPIC_API_KEY environment variable is not set or is empty, THEN THE LLM_Client SHALL make no LLM call, and THE Plan_Generator SHALL return a Fallback_Plan with the fallback flag set to true.
 12. WHEN a Plan request completes, THE Backend SHALL return the Plan, Air_Reading, Impact_Table, Exposure_Score, and a fallback flag in a single response, with the fallback flag set to false when the Plan came from a validated LLM response.
 13. WHEN the Backend response is received, THE Web_Page SHALL display the Plan sections, the Air_Reading with CPCB_Band and indicative GRAP_Stage, and the Exposure_Score.
 
@@ -141,7 +141,7 @@ The system is a Python FastAPI backend deployed as a Vercel serverless function,
 
 #### Acceptance Criteria
 
-1. IF the OPENAI_API_KEY environment variable is missing or is an empty string, THEN THE Plan_Generator SHALL skip the LLM_Client call and return a Fallback_Plan.
+1. IF the ANTHROPIC_API_KEY environment variable is missing or is an empty string, THEN THE Plan_Generator SHALL skip the LLM_Client call and return a Fallback_Plan.
 2. IF the LLM_Client call raises an error, does not return a response within the LLM_Timeout, or returns output that cannot be parsed as JSON, THEN THE Plan_Generator SHALL return a Fallback_Plan.
 3. IF the parsed LLM response fails validation against the Plan schema (a required field is missing or a field has the wrong type), THEN THE Plan_Generator SHALL return a Fallback_Plan.
 4. WHEN the Plan_Generator returns a Fallback_Plan, THE Plan_Generator SHALL set the fallback flag to true.
@@ -198,13 +198,13 @@ The system is a Python FastAPI backend deployed as a Vercel serverless function,
 
 #### Acceptance Criteria
 
-1. THE Backend SHALL read the value of OPENAI_API_KEY and any other credential only from process environment variables, and SHALL NOT read credentials from request payloads, query parameters, or source files committed to the repository.
-2. THE Backend SHALL exclude the value of every secret (including OPENAI_API_KEY) from log output, HTTP response bodies, HTTP response headers, and error messages.
+1. THE Backend SHALL read the value of ANTHROPIC_API_KEY and any other credential only from process environment variables, and SHALL NOT read credentials from request payloads, query parameters, or source files committed to the repository.
+2. THE Backend SHALL exclude the value of every secret (including ANTHROPIC_API_KEY) from log output, HTTP response bodies, HTTP response headers, and error messages.
 3. WHEN the Web_Page inserts server-supplied or LLM-supplied text into the DOM, THE Web_Page SHALL insert the text as text nodes or as HTML-escaped text, so that the characters `<`, `>`, `&`, `"`, and `'` are displayed literally and are not interpreted as markup.
 4. THE Web_Page SHALL NOT assign server-supplied or LLM-supplied text to innerHTML, outerHTML, or insertAdjacentHTML unless the text has first been HTML-escaped.
-5. THE AirWise repository SHALL provide a .env.example file that lists the variable names OPENAI_API_KEY and OPENAI_MODEL, each with an empty or placeholder value and no real credential.
+5. THE AirWise repository SHALL provide a .env.example file that lists the variable names ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL, and LLM_MODEL, each with an empty or placeholder value and no real credential.
 6. IF an unexpected error occurs in the Backend, THEN THE Backend SHALL return an error response containing a generic message that indicates a server error occurred, SHALL NOT include stack traces, file paths, or secret values in the response, and SHALL leave previously stored data unchanged.
-7. IF OPENAI_API_KEY is missing or empty when a request requires it, THEN THE Backend SHALL NOT disclose the variable's value or any portion of it in any response, and SHALL handle the request as specified in Requirement 7 for plans and Requirement 8 for chat.
+7. IF ANTHROPIC_API_KEY is missing or empty when a request requires it, THEN THE Backend SHALL NOT disclose the variable's value or any portion of it in any response, and SHALL handle the request as specified in Requirement 7 for plans and Requirement 8 for chat.
 
 ### Requirement 12: Deployment architecture
 
@@ -228,7 +228,7 @@ The system is a Python FastAPI backend deployed as a Vercel serverless function,
 #### Acceptance Criteria
 
 1. THE AirWise repository SHALL include pytest tests that contain at least one passing test case for each of the following areas: AQI computation, CPCB_Band assignment, GRAP_Stage assignment, Impact_Engine output, request validation, rate limiting, plan fallback, and chat behavior.
-2. THE pytest tests SHALL mock the Open-Meteo APIs and the OpenAI API, and SHALL complete with zero outbound network connections and with no OpenAI API key set in the environment.
+2. THE pytest tests SHALL mock the Open-Meteo APIs and the Anthropic API, and SHALL complete with zero outbound network connections and with no Anthropic API key set in the environment.
 3. FOR ALL integer AQI values from 0 to 500 inclusive, THE tests SHALL verify that exactly one CPCB_Band is assigned and that each band boundary matches the ranges defined in Requirement 1.
 4. FOR ALL valid Household_Profile and Air_Reading inputs, THE tests SHALL verify that the Impact_Engine returns identical output when called twice with the same input, and that the Exposure_Score is between 0 and 100 inclusive.
 5. FOR ALL valid Plan objects, THE tests SHALL verify that serializing the Plan to JSON and parsing the result produces a Plan equal to the original in every field (round-trip property).
@@ -245,8 +245,8 @@ The system is a Python FastAPI backend deployed as a Vercel serverless function,
 2. THE README local setup section SHALL list, in numbered steps, the supported Python version, the dependency installation command, and the command that starts AirWise locally.
 3. THE README environment variables section SHALL list every environment variable defined in `.env.example`, and for each variable SHALL state its name, whether it is required or optional, its purpose, and its default value if one exists.
 4. THE README pytest section SHALL give the exact command that runs the full test suite from the repository root.
-5. THE README SHALL include a Vercel deployment section with numbered steps covering: importing the repository into Vercel, setting the required OPENAI_API_KEY environment variable, optionally setting the OPENAI_MODEL environment variable, deploying, and confirming the deployment is working.
-6. THE README Vercel deployment section SHALL state the default model that AirWise uses when OPENAI_MODEL is not set.
+5. THE README SHALL include a Vercel deployment section with numbered steps covering: importing the repository into Vercel, setting the required ANTHROPIC_API_KEY environment variable, setting ANTHROPIC_BASE_URL if a gateway is used, optionally setting the LLM_MODEL environment variable, deploying, and confirming the deployment is working.
+6. THE README Vercel deployment section SHALL state the default model that AirWise uses when LLM_MODEL is not set.
 7. THE README SHALL contain a disclaimer section stating that (a) the impact figures are approximate, (b) the GRAP_Stage is indicative, and (c) AirWise does not provide medical advice.
 
 ### Requirement 15: Scope boundaries

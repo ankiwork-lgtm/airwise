@@ -17,6 +17,7 @@ from airwise.config import (
     REQUEST_DEADLINE_S,
     WINDOW_S,
     Deadline,
+    load_env_file,
 )
 from airwise.errors import AppError, RateLimited, ValidationFailure
 from airwise.middleware import BodySizeLimitMiddleware, client_ip
@@ -30,7 +31,7 @@ from airwise.models import (
 )
 from airwise.services import aqi as aqi_service
 from airwise.services.chat import answer as chat_answer
-from airwise.services.llm import LLMClient, OpenAIClient
+from airwise.services.llm import LLMClient, AnthropicClient
 from airwise.services.plan import generate_plan
 
 INDEX_PATH = Path(__file__).resolve().parent.parent / "public" / "index.html"
@@ -52,7 +53,7 @@ async def get_http_client() -> httpx.AsyncClient:
 
 def get_llm_client() -> LLMClient:
     """LLM client; override via app.dependency_overrides in tests."""
-    return OpenAIClient()
+    return AnthropicClient()
 
 
 def get_deadline() -> Deadline:
@@ -111,6 +112,7 @@ def _rate_limit_check(endpoint: str, limiter: FixedWindowLimiter):
 
 
 def create_app() -> FastAPI:
+    load_env_file()
     app = FastAPI(title="AirWise")
     plan_limiter = FixedWindowLimiter(PLAN_LIMIT, WINDOW_S)
     chat_limiter = FixedWindowLimiter(CHAT_LIMIT, WINDOW_S)

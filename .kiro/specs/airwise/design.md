@@ -17,7 +17,7 @@ The key design decision is the split between numbers and prose. Every figure sho
 - **Open-Meteo Geocoding**: `GET https://geocoding-api.open-meteo.com/v1/search?name=<city>&count=1&language=en&format=json&countryCode=IN`. No key. Results are ranked, so `count=1` yields the top-ranked match, and `countryCode=IN` restricts the search to India. An unmatched name returns a response with no `results` key.
 - **Open-Meteo Air Quality**: `GET https://air-quality-api.open-meteo.com/v1/air-quality?latitude=..&longitude=..&current=pm2_5,pm10`. No key. Values are ug/m3 and instantaneous. CPCB defines AQI on 24-hour averages, so the computed AQI is an approximation. The UI labels the reading "current", and the README disclaimer covers this.
 - **CPCB India AQI**: The sub-index uses piecewise-linear interpolation, `I = (Ihi - Ilo) / (BPhi - BPlo) * (C - BPlo) + Ilo`, with the breakpoints in the table below. The AQI is the maximum sub-index.
-- **OpenAI**: The Chat Completions API supports `response_format` of type `json_schema` with `strict: true` on `gpt-4o-mini`. Strict mode accepts only a subset of JSON Schema keywords, so the schema sent to the model carries types and required fields. Pydantic enforces lengths and counts after the response arrives. The SDK client is created with `max_retries=0` and a `timeout`.
+- **Anthropic**: The Messages API (`POST {ANTHROPIC_BASE_URL}/messages`) returns structured JSON through a forced tool call: the request defines one tool whose `input_schema` is the plan schema and sets `tool_choice` to that tool. The response `tool_use` block carries the JSON. Pydantic enforces lengths and counts after the response arrives. The call goes through `httpx` with a `timeout` and no retries.
 - **Vercel Python**: A file at `api/index.py` that exposes an ASGI `app` is served as a function. `vercel.json` `rewrites` send `/api/(.*)` to `/api/index`, and FastAPI routes on the original path. `functions."api/index.py".maxDuration` and `includeFiles` are already set in the repository's `vercel.json` (30 s, `public/**`). Files in `public/` are served statically at `/` by Vercel. `includeFiles` also lets the function read `public/index.html` for local serving and as a fallback.
 
 CPCB breakpoints (concentration ug/m3 to sub-index):
@@ -50,7 +50,7 @@ flowchart LR
     PG --> FB["services/fallback.py"]
     Chat --> LLM
     AQI -->|"8 s timeout"| OM["Open-Meteo<br/>geocoding + air quality"]
-    LLM -->|"20 s timeout"| OAI["OpenAI API"]
+    LLM -->|"20 s timeout"| OAI["Anthropic API"]
 ```
 
 ### Plan request sequence
@@ -86,7 +86,7 @@ sequenceDiagram
 | Impact_Engine is a data-driven rules list | Deterministic, easy to test, easy to extend. Rule order is fixed, so output order is fixed. |
 | `1 - prod(1 - r_i)` for the Exposure_Score | Overlapping measures do not add linearly. The result never exceeds the sum, and a final `min(score, sum, 100)` guards against rounding. |
 | Request deadline of 28 s with LLM timeout `min(20, remaining - 1)` | Worst case is 8 s geocoding + 8 s air quality + 20 s LLM = 36 s, which exceeds `maxDuration` 30 s. A request-level deadline keeps the response inside the limit. If less than 2 s remain, the LLM call is skipped and the Fallback_Plan is returned. This still satisfies "at most one call". In the normal case the LLM timeout is 20 s, at least 2 s below `maxDuration` (12.8). |
-| Hard timeout via `asyncio.wait_for` around the SDK call, plus SDK `timeout` | Bounds total time even if the SDK timeout covers only part of the call. |
+| Hard timeout via `asyncio.wait_for` around the HTTP call, plus the httpx `timeout` | Bounds total time even if the SDK timeout covers only part of the call. |
 | Services take injected `httpx.AsyncClient` and an `LLMClient` protocol | Tests run with `httpx.MockTransport` and a fake LLM client, with no network. |
 | In-memory fixed-window limiter with injectable clock | Matches the requirement and is deterministic in tests. It is per warm instance only, so it is best effort on serverless. Cold starts and parallel instances each hold their own counters. |
 | Chat scope guard runs before the LLM | Diagnosis, medication, and official-GRAP-declaration requests (15.5) are declined deterministically with no LLM cost. |
@@ -111,7 +111,7 @@ airwise/
     __init__.py
     aqi.py                   # geocode, fetch, compute AQI, band, GRAP, estimated reading
     impact.py                # Impact_Table rules, Exposure_Score
-    llm.py                   # LLMClient protocol, OpenAIClient
+    llm.py                   # LLMClient protocol, AnthropicClient
     plan.py                  # Plan_Generator orchestration, sanitize, ensure_*
     fallback.py              # build_fallback_plan()
     chat.py                  # Chat_Service, scope guard
@@ -136,8 +136,8 @@ MAX_BODY_BYTES = 65_536
 PLAN_LIMIT, CHAT_LIMIT, WINDOW_S = 10, 30, 60
 ESTIMATED_PM25, ESTIMATED_PM10 = 150.0, 260.0   # typical winter values
 
-def openai_api_key() -> str | None   # os.environ only; empty string -> None
-def openai_model() -> str            # OPENAI_MODEL or "gpt-4o-mini" when unset or empty
+def anthropic_api_key() -> str | None   # os.environ only; empty string -> None
+def anthropic_base_url() -> str        # ANTHROPIC_BASE_URL or "https://api.anthropic.com/v1"; no trailing slash
 ```
 
 Credentials are read only from `os.environ` at call time. Nothing reads them from request data.
@@ -214,20 +214,20 @@ class LLMClient(Protocol):
     async def complete_json(self, *, system: str, user: str,
                             schema_name: str, schema: dict, timeout_s: float) -> dict: ...
 
-class OpenAIClient:
-    # AsyncOpenAI(api_key=<env>, timeout=timeout_s, max_retries=0)
-    # chat.completions.create(model=openai_model(), messages=[system,user],
-    #     response_format={"type": "json_schema",
-    #                      "json_schema": {"name": schema_name, "strict": True, "schema": schema}},
-    #     temperature=0.4)
+class AnthropicClient:
+    # httpx.AsyncClient(timeout=timeout_s).post(f"{anthropic_base_url()}/messages",
+    #     headers={"x-api-key": <env>, "anthropic-version": ...},
+    #     json={"model": llm_model(), "system": system, "messages": [user], "temperature": 0.4,
+    #           "tools": [{"name": schema_name, "input_schema": schema}],
+    #           "tool_choice": {"type": "tool", "name": schema_name}})
     # wrapped in asyncio.wait_for(..., timeout_s); returns json.loads(content)
 
-class LLMUnavailable(Exception)   # missing key, SDK error, timeout, unparsable JSON
+class LLMUnavailable(Exception)   # missing key, HTTP error, timeout, unparsable JSON
 ```
 
-`OpenAIClient` raises `LLMUnavailable` (without the key in the message) when the key is missing. In that case it performs no network call. Callers also check `openai_api_key()` first so a missing key is never counted as an LLM call.
+`AnthropicClient` raises `LLMUnavailable` (without the key in the message) when the key is missing. In that case it performs no network call. Callers also check `anthropic_api_key()` first so a missing key is never counted as an LLM call.
 
-Two hand-written JSON schemas are sent to the model, `PLAN_JSON_SCHEMA` and `CHAT_JSON_SCHEMA`. They declare types, `required`, and `additionalProperties: false`, but no length or count keywords, since strict mode does not accept them all. Pydantic validates lengths and counts afterwards.
+Two hand-written JSON schemas are sent to the model, `PLAN_JSON_SCHEMA` and `CHAT_JSON_SCHEMA`. They declare types, `required`, and `additionalProperties: false`, but no length or count keywords. Pydantic validates lengths and counts afterwards.
 
 Prompts:
 
@@ -244,7 +244,7 @@ async def generate_plan(profile, reading, *, llm: LLMClient, deadline: Deadline)
 Steps:
 
 1. `impact = compute_impact(profile, reading)`.
-2. If `openai_api_key()` is falsy or `deadline.remaining() < LLM_MIN_BUDGET_S`, return `build_fallback_plan(...)` with no LLM call (6.11, 7.1).
+2. If `anthropic_api_key()` is falsy or `deadline.remaining() < LLM_MIN_BUDGET_S`, return `build_fallback_plan(...)` with no LLM call (6.11, 7.1).
 3. Make exactly one `llm.complete_json(...)` call with `timeout_s = min(LLM_TIMEOUT_S, deadline.remaining() - 1)`. There is no loop and no retry (6.1, 7.8, 12.6).
 4. On `LLMUnavailable`, timeout, or any other exception, return the Fallback_Plan (7.2).
 5. Validate the dict against `LLMPlan` (pydantic). On `ValidationError`, return the Fallback_Plan (7.3).
@@ -363,7 +363,7 @@ Behavior:
 
 `vercel.json` stays as it is in the repository: rewrite `/api/(.*)` to `/api/index`, `maxDuration` 30, `includeFiles` `public/**`. Vercel serves `public/index.html` at `/` statically.
 
-`pyproject.toml` keeps the runtime dependencies (`fastapi`, `httpx`, `openai`, `pydantic`) and extends the `dev` extra:
+`pyproject.toml` keeps the runtime dependencies (`fastapi`, `httpx`, `pydantic`) and extends the `dev` extra:
 
 ```toml
 dev = ["pytest>=8.0", "uvicorn>=0.29", "hypothesis>=6.100"]
@@ -639,7 +639,7 @@ For any time already spent before the LLM step, the planned LLM timeout is at mo
 | City not found | `geocode` | 404 `city_not_found`, no AQ call, no reading |
 | Geocoding timeout or failure | `geocode` | 502 `lookup_unavailable`, no reading |
 | Air quality timeout, failure, or no PM values | `get_reading` | Estimated_Reading with `source="estimated"`, HTTP 200 |
-| `OPENAI_API_KEY` missing or empty | `plan.py`, `chat.py` | Plan: Fallback_Plan. Chat: failure reply. No LLM call |
+| `ANTHROPIC_API_KEY` missing or empty | `plan.py`, `chat.py` | Plan: Fallback_Plan. Chat: failure reply. No LLM call |
 | LLM error, timeout, bad JSON, schema-invalid | `plan.py`, `chat.py` | Plan: Fallback_Plan. Chat: failure reply with "answer unavailable, try again later" |
 | Request deadline almost spent | `plan.py`, `chat.py` | LLM skipped, same result as an LLM failure |
 | Out-of-scope chat request | `chat.scope guard` | Decline message, no LLM call, HTTP 200 |
@@ -647,7 +647,7 @@ For any time already spent before the LLM step, the planned LLM timeout is at mo
 
 Rules that apply everywhere:
 
-- No response body, header, log line, or error message contains `OPENAI_API_KEY` or any other environment value. Exception text from the OpenAI SDK is not forwarded to clients. Only the exception class name is logged.
+- No response body, header, log line, or error message contains `ANTHROPIC_API_KEY` or any other environment value. Exception text from the Anthropic API client is not forwarded to clients. Only the exception class name is logged.
 - Chat failures return HTTP 200 with `failed=true` so the page can show the message inline and keep the history. A plan LLM failure is not an error to the client, since it returns a flagged Fallback_Plan.
 - The Backend stores nothing between requests, so a failed request leaves no state to repair. The only in-memory state is the rate-limiter counters, which a rejected request does not change.
 - The Web_Page shows a plain-language message for each error code and never renders raw server text as HTML.
@@ -656,7 +656,7 @@ Rules that apply everywhere:
 
 ### Approach
 
-Property-based testing applies here. The Backend core is made of pure functions with clear input and output behavior (AQI computation, band and GRAP mapping, the Impact_Engine, plan sanitization, the fallback builder, the limiter, IP extraction) and of serializable models. These have universal properties over large input spaces. PBT is not used for the I/O layer (Open-Meteo and OpenAI calls), the HTML page, or deployment config. Those use example-based tests with mocks, static checks, and manual checks.
+Property-based testing applies here. The Backend core is made of pure functions with clear input and output behavior (AQI computation, band and GRAP mapping, the Impact_Engine, plan sanitization, the fallback builder, the limiter, IP extraction) and of serializable models. These have universal properties over large input spaces. PBT is not used for the I/O layer (Open-Meteo and Anthropic calls), the HTML page, or deployment config. Those use example-based tests with mocks, static checks, and manual checks.
 
 **Library**: `hypothesis`, added to the `dev` extra in `pyproject.toml`. No property-testing framework is written from scratch.
 
@@ -674,16 +674,16 @@ Examples and edge cases that complement the properties:
 - **AQI**: Known CPCB reference points (for example PM2.5 of 60 gives AQI 100, and PM10 of 430 gives AQI 400). Only PM2.5 present, only PM10 present. Values above the top breakpoint cap at 500.
 - **Geocoding and air quality** (via `httpx.MockTransport`): The request parameters include `countryCode=IN` and `count=1`. No `results` key gives 404 with zero AQ requests. Timeout, 500, and transport error on geocoding give 502. For the AQ call, timeout, 500, malformed JSON, and both-null values each give an Estimated_Reading. The AQ call is attempted once. Both timeouts are 8 s.
 - **Impact_Engine**: A clean-air profile (AQI 50, LPG, no heating, purifier, walking) gives 0 rows and score 0. A worst-case profile gives 9 rows. Invalid direct inputs raise `InvalidInput` and return nothing.
-- **Plan endpoint**: A valid LLM response gives `fallback=false` and the full single-response shape. The LLM request carries the table ids and the `json_schema` response format. Model name defaults to `gpt-4o-mini` when `OPENAI_MODEL` is unset or empty.
+- **Plan endpoint**: A valid LLM response gives `fallback=false` and the full single-response shape. The LLM request carries the table ids and a forced tool whose `input_schema` is the plan schema. Model name defaults to `claude-haiku-5-5` when `LLM_MODEL` is unset or empty.
 - **Chat endpoint**: Statelessness (same request gives the same LLM payload), failure message on missing key, error, and timeout, fixed off-topic reply, JSON content type.
 - **Limiter endpoints**: The 11th plan request returns 429 with `Retry-After` and the fake LLM count stays at 10 or below. Plan and chat quotas are independent.
 - **Errors**: A forced exception returns the generic 500 body. A fake key set in the environment never appears in any response body, header, or captured log.
-- **Static checks**: `public/index.html` contains no `innerHTML`, `outerHTML`, or `insertAdjacentHTML`, no external `<script src>` or stylesheet link, the indicative GRAP label, the disclaimer, and 3 to 5 starter questions. `.env.example` lists `OPENAI_API_KEY` and `OPENAI_MODEL` with no real key. `requirements.txt` does not exist. `vercel.json` has the rewrite, and `LLM_TIMEOUT_S + 2 <= maxDuration`.
+- **Static checks**: `public/index.html` contains no `innerHTML`, `outerHTML`, or `insertAdjacentHTML`, no external `<script src>` or stylesheet link, the indicative GRAP label, the disclaimer, and 3 to 5 starter questions. `.env.example` lists `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, and `LLM_MODEL` with no real key. `requirements.txt` does not exist. `vercel.json` has the rewrite, and `LLM_TIMEOUT_S + 2 <= maxDuration`.
 
 ### Test environment guarantees
 
-- `tests/conftest.py` has an autouse fixture that deletes `OPENAI_API_KEY` and `OPENAI_MODEL` from the environment, and patches `socket.socket.connect` to raise, so any real network access fails the test (13.2). Tests that need a key set a fake value through `monkeypatch`.
-- Open-Meteo is served by `httpx.MockTransport`. OpenAI is replaced by the fake `LLMClient` through `app.dependency_overrides`. The real `OpenAIClient` is tested only for argument construction, with the SDK class monkeypatched.
+- `tests/conftest.py` has an autouse fixture that deletes `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, and `LLM_MODEL` from the environment, and patches `socket.socket.connect` to raise, so any real network access fails the test (13.2). Tests that need a key set a fake value through `monkeypatch`.
+- Open-Meteo is served by `httpx.MockTransport`. Anthropic is replaced by the fake `LLMClient` through `app.dependency_overrides`. The real `AnthropicClient` is tested only for argument construction, with the HTTP transport replaced by `httpx.MockTransport`.
 - Rate-limiter state is reset per test by creating the app through `create_app()`.
 - `pytest` exits non-zero on any failure and reports each failing test name (13.6). The suite is in-memory and CPU-light, so it finishes well under 60 seconds with no network (13.7). Hypothesis uses `deadline=None` for the app-level tests and a fixed `derandomize` profile in CI for reproducibility.
 

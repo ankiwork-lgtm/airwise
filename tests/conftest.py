@@ -1,4 +1,5 @@
 import socket
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -8,8 +9,11 @@ from airwise.main import create_app
 
 @pytest.fixture(autouse=True)
 def _isolate_env_and_network(monkeypatch):
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_MODEL", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+    # Keep the developer's real .env out of tests.
+    monkeypatch.setattr("airwise.config.ENV_FILE", Path("__no_such_env_file__"))
 
     real_connect = socket.socket.connect
 
