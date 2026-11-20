@@ -7,11 +7,13 @@
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
+<a class="skip-link" href="#main">Skip to main content</a>
 <div class="disclaimer" role="note">General information only, not medical advice.</div>
-<main>
+<header>
   <h1>AirWise</h1>
   <p>Low-emission routines for severe winter smog in India.</p>
-
+</header>
+<main id="main" tabindex="-1">
   <section aria-labelledby="loc-h">
     <h2 id="loc-h">Location</h2>
     <label for="city">City</label>
@@ -34,7 +36,10 @@
     <div id="status" class="status" role="status" aria-live="polite"></div>
   </section>
 
-  <section id="result" aria-label="Results" hidden></section>
+  <section id="result" aria-labelledby="result-h" hidden>
+    <h2 id="result-h" tabindex="-1">Your air quality plan</h2>
+    <div id="result-body"></div>
+  </section>
 
   <section id="chat" aria-labelledby="chat-h" hidden>
     <h2 id="chat-h">Ask a follow-up</h2>
@@ -47,8 +52,12 @@
         <button type="submit" id="chat-send">Send</button>
       </div>
     </form>
+    <div id="chat-status" class="status" role="status" aria-live="polite"></div>
   </section>
 </main>
+<footer>
+  <p>AirWise gives general information only and is not medical advice. Air quality data from Open-Meteo.</p>
+</footer>
 <script src="/app.js" defer></script>
 </body>
 </html>

@@ -1,23 +1,75 @@
   * { box-sizing: border-box; }
   body { font-family: system-ui, sans-serif; margin: 0; color: #1b1f23; background: #f7f8fa; }
   .disclaimer { position: sticky; top: 0; z-index: 10; background: #fff3cd; border-bottom: 1px solid #e0c36a; padding: 8px 16px; font-size: 14px; }
-  main { max-width: 760px; margin: 0 auto; padding: 16px; }
+  /* T5.8: the banner is sticky only where it cannot crowd out the page. It stays in normal flow at
+     the top either way, so the text is never lost, only un-pinned.
+     - max-width 40em (640px at the default 16px): below this the text can wrap to several lines.
+       400% zoom of a 1280px window is 320 CSS px wide, 200% is 640px, so both land here (WCAG 1.4.10).
+     - max-height 32em (512px): a pinned banner on a short viewport (400% zoom of 1024px is 256px high,
+       or landscape phones) covers a large share of the screen and can hide the focused control (2.4.11).
+     em, not px, so the thresholds follow the user's default font size and larger text widens them.
+     scroll-padding-top reserves the sticky banner's height (one line: 8px+8px padding, 1px border,
+     ~17px text, rounded up to 3.5rem) so keyboard focus, in-page jumps and the #main skip link
+     scroll targets clear it (WCAG 2.4.11). It is reset to 0 whenever the banner is static. */
+  html { scroll-padding-top: 3.5rem; }
+  @media (max-width: 40em), (max-height: 32em) {
+    html { scroll-padding-top: 0; }
+    .disclaimer { position: static; }
+  }
+  header, footer { max-width: 760px; margin: 0 auto; padding: 0 16px; }
+  header { padding-top: 16px; }
+  main { max-width: 760px; margin: 0 auto; padding: 0 16px 16px; }
   h1 { margin: 8px 0 4px; }
+  header p { margin: 0 0 8px; }
+  footer { padding-bottom: 24px; color: #4a5560; font-size: 14px; }
+  footer p { margin: 0; }
   h2 { font-size: 18px; margin: 0 0 12px; }
   section { background: #fff; border: 1px solid #dde1e6; border-radius: 8px; padding: 16px; margin: 16px 0; }
   label { display: block; font-weight: 600; margin: 12px 0 4px; }
-  input[type=text], select { width: 100%; padding: 8px; font-size: 16px; border: 1px solid #9aa3ad; border-radius: 4px; background: #fff; }
+  input[type=text], select { width: 100%; padding: 8px; font-size: 16px; border: 1px solid #858e98; border-radius: 4px; background: #fff; }
+  /* Flagged fields: error colour (7.33:1 on white) plus a 2px border, so it is not colour alone.
+     Padding drops by 1px to offset the thicker border, so the control keeps its size. No outline
+     is set here, so the keyboard focus ring defined below still shows on top. */
+  input[type=text][aria-invalid="true"], select[aria-invalid="true"] { border-width: 2px; border-color: #b00020; padding: 7px; }
+  ::placeholder { color: #5b6570; opacity: 1; }
   .row { display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap; }
   .row > input { flex: 1 1 200px; width: auto; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 16px; }
   button { font-size: 16px; padding: 8px 14px; border: 1px solid #1f6feb; background: #1f6feb; color: #fff; border-radius: 4px; cursor: pointer; }
   button.secondary { background: #fff; color: #1f6feb; }
   button:disabled { opacity: 0.6; cursor: not-allowed; }
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  .table-wrap:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 3px solid #0b3d91;
+    outline-offset: 2px;
+  }
+  /* Skip link: off-screen until focused, then shown top-left above the sticky disclaimer (z-index 10).
+     No transition, so there is no motion to reduce. The shared a:focus-visible ring still applies. */
+  .skip-link { position: absolute; top: 8px; left: 8px; z-index: 11; padding: 8px 14px; background: #0b3d91; color: #fff; font-weight: 600; text-decoration: none; border-radius: 4px; transform: translateY(-200%); }
+  .skip-link:focus { transform: none; }
+  /* The one outline exception: main is only a programmatic focus target (skip link, tabindex="-1"),
+     not an interactive control, so a ring around the whole page content would be noise. It needs
+     the id to out-rank the [tabindex]:focus-visible rule above. */
+  #main:focus,
+  #main:focus-visible { outline: none; }
+  #result-h:focus,
+  #result-h:focus-visible {
+    outline: 3px solid #0b3d91;
+    outline-offset: 4px;
+  }
   .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
   .status { min-height: 1.5em; margin-top: 8px; }
   .status.error { color: #b00020; }
   .status ul { margin: 4px 0 0 20px; padding: 0; }
   .loading::before { content: ""; display: inline-block; width: 12px; height: 12px; margin-right: 8px; border: 2px solid #1f6feb; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: -2px; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+    .loading::before { animation: none; background: #1f6feb; border-color: #1f6feb; }
+  }
   @keyframes spin { to { transform: rotate(360deg); } }
   .card { margin: 0 0 16px; }
   .aqi-value { font-size: 40px; font-weight: 700; }
@@ -31,10 +83,12 @@
   .table-wrap { overflow-x: auto; }
   table { border-collapse: collapse; width: 100%; font-size: 14px; }
   th, td { border: 1px solid #dde1e6; padding: 6px 8px; text-align: left; vertical-align: top; }
+  caption { text-align: left; padding: 0 0 6px; }
   .starters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
   .chat-history { list-style: none; margin: 0 0 12px; padding: 0; max-height: 360px; overflow-y: auto; }
-  .bubble { max-width: 85%; margin: 0 0 8px; padding: 8px 12px; border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .bubble { position: relative; max-width: 85%; margin: 0 0 8px; padding: 8px 12px; border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
   .bubble.user { margin-left: auto; background: #1f6feb; color: #fff; }
   .bubble.assistant { background: #eef1f4; }
   .bubble.failed { background: #fdecea; color: #b00020; }
   [hidden] { display: none !important; }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }

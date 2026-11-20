@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
-from fastapi import Depends, FastAPI, Query, Request
+from fastapi import Depends, FastAPI, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
@@ -256,6 +256,11 @@ def create_app() -> FastAPI:
     @app.get("/app.js", include_in_schema=False)
     async def app_js() -> FileResponse:
         return FileResponse(JS_PATH, media_type="text/javascript; charset=utf-8")
+
+    # No icon is shipped; answer browsers' automatic request with an empty 204, not a 404.
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon() -> Response:
+        return Response(status_code=204, headers={"Cache-Control": "public, max-age=86400"})
 
     return app
 

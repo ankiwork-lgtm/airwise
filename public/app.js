@@ -4,6 +4,8 @@
   var STORAGE_KEY = "airwise.profile";
   var GEO_TIMEOUT_MS = 10000;
   var FALLBACK_CITY = "My location";
+  var STATUS_ID = "status";
+  var CHAT_STATUS_ID = "chat-status";
 
   var YES_NO = [["yes", "Yes"], ["no", "No"]];
   var FIELDS = [
@@ -108,17 +110,93 @@
     });
   }
 
-  function invalidFieldLabels(p) {
+  // Returns [{ id, label }] for each invalid control, in form order.
+  function invalidFields(p) {
     var bad = [];
     var city = typeof p.city === "string" ? p.city.trim() : "";
-    if (city.length < 1 || city.length > 100) { bad.push("City"); }
+    if (city.length < 1 || city.length > 100) { bad.push({ id: "city", label: "City" }); }
     FIELDS.forEach(function (f) {
       var v = p[f.name];
       var ok = f.type === "bool" ? typeof v === "boolean"
         : (typeof v === "string" && f.options.some(function (o) { return o[0] === v; }));
-      if (!ok) { bad.push(f.label); }
+      if (!ok) { bad.push({ id: "f-" + f.name, label: f.label }); }
     });
     return bad;
+  }
+
+  function invalidFieldLabels(p) {
+    return invalidFields(p).map(function (x) { return x.label; });
+  }
+
+  // ---------- Invalid field marking (aria-invalid + aria-describedby) ----------
+  function controlIds() {
+    return ["city"].concat(FIELDS.map(function (f) { return "f-" + f.name; }));
+  }
+
+  // Maps an API field name such as "profile.kids" to a control id, or null.
+  function controlIdForApiField(name) {
+    var key = String(name).split(".").pop();
+    if (key === "city") { return "city"; }
+    var found = FIELDS.some(function (f) { return f.name === key; });
+    return found ? "f-" + key : null;
+  }
+
+  function tokens(node, attr) {
+    return (node.getAttribute(attr) || "").split(/\s+/).filter(function (t) { return t !== ""; });
+  }
+
+  function markInvalid(control, statusId) {
+    control.setAttribute("aria-invalid", "true");
+    var cur = tokens(control, "aria-describedby");
+    if (cur.indexOf(statusId) < 0) { cur.push(statusId); }
+    control.setAttribute("aria-describedby", cur.join(" "));
+  }
+
+  function unmarkInvalid(control, statusId) {
+    control.removeAttribute("aria-invalid");
+    var rest = tokens(control, "aria-describedby").filter(function (t) { return t !== statusId; });
+    if (rest.length) { control.setAttribute("aria-describedby", rest.join(" ")); }
+    else { control.removeAttribute("aria-describedby"); }
+  }
+
+  function clearInvalidFields() {
+    controlIds().forEach(function (id) {
+      var control = byId(id);
+      if (control) { unmarkInvalid(control, STATUS_ID); }
+    });
+  }
+
+  // Marks the controls with these ids (unknown ids are skipped) and returns the
+  // first one in form order, or null.
+  function markInvalidIds(ids) {
+    var first = null;
+    controlIds().forEach(function (id) {
+      if (ids.indexOf(id) < 0) { return; }
+      var control = byId(id);
+      markInvalid(control, STATUS_ID);
+      if (!first) { first = control; }
+    });
+    return first;
+  }
+
+  // Marks controls named by the API (unmappable names are skipped silently).
+  function markApiFields(names) {
+    var ids = [];
+    names.forEach(function (n) {
+      var id = controlIdForApiField(n);
+      if (id) { ids.push(id); }
+    });
+    return markInvalidIds(ids);
+  }
+
+  function focusControl(control) {
+    if (control) { control.focus(); }
+  }
+
+  // Drops the invalid mark from a control once its value is acceptable again.
+  function revalidateControl(id) {
+    var stillBad = invalidFields(readProfile()).some(function (x) { return x.id === id; });
+    if (!stillBad) { unmarkInvalid(byId(id), STATUS_ID); }
   }
 
   // ---------- localStorage (every access guarded) ----------
@@ -141,8 +219,15 @@
   }
 
   // ---------- Status helpers ----------
+  // The node is reused (never re-created) so the live region stays reliable.
+  // Errors become role="alert"/assertive; everything else role="status"/polite.
+  // The role is applied before the text so the new text is what gets announced.
   function setStatus(node, message, opts) {
     opts = opts || {};
+    node.setAttribute("role", opts.error ? "alert" : "status");
+    node.setAttribute("aria-live", opts.error ? "assertive" : "polite");
+    // Any new status message makes earlier field marks stale; callers re-mark after.
+    if (node.id === STATUS_ID) { clearInvalidFields(); }
     clearNode(node);
     node.className = "status" + (opts.error ? " error" : "") + (opts.loading ? " loading" : "");
     if (message) { node.appendChild(el("span", message)); }
@@ -168,7 +253,7 @@
         message = "Too many requests. Please try again in " + secs + (secs === 1 ? " second." : " seconds.");
       }
     }
-    return { message: message, list: list };
+    return { message: message, list: list, code: code, fields: Array.isArray(err.fields) ? err.fields : [] };
   }
 
   function callApi(path, options) {
@@ -214,7 +299,9 @@
       byId("city").value = FALLBACK_CITY;
     }
     if (!isValidProfile(profile)) {
+      var bad = invalidFields(profile);
       setStatus(status, "Please complete these fields:", { error: true, list: invalidFieldLabels(profile) });
+      focusControl(markInvalidIds(bad.map(function (x) { return x.id; })));
       return;
     }
     btn.disabled = true;
@@ -228,6 +315,7 @@
       publish("airwise:plan", data);
     }, function (e) {
       setStatus(status, e.detail.message, { error: true, list: e.detail.list });
+      if (e.detail.code === "validation_error") { focusControl(markApiFields(e.detail.fields)); }
     }).then(function () { btn.disabled = false; });
   }
 
@@ -286,6 +374,8 @@
   var GRAP_LABEL = "indicative, not an official declaration";
   var ESTIMATED_NOTICE = "This is an estimated typical winter value, not live data.";
   var FALLBACK_NOTICE = "This plan is rule-based and not AI-personalized.";
+  var IMPACT_HEADING_ID = "impact-h";
+  var IMPACT_CAPTION = "Estimated exposure and CO2 reduction for each recommended action. Figures are approximate.";
   var NO_ACTIONS = "No further actions apply.";
   var SLOTS = [["morning", "Morning"], ["commute", "Commute"], ["midday", "Midday"], ["evening", "Evening"]];
 
@@ -324,16 +414,26 @@
 
   function renderImpact(rows) {
     var box = el("div", null, "block");
-    box.appendChild(el("h3", "Impact table"));
+    var heading = el("h3", "Impact table");
+    heading.id = IMPACT_HEADING_ID;  // one impact table per render, so the id is unique
+    box.appendChild(heading);
     if (!rows.length) {
       box.appendChild(el("p", NO_ACTIONS, "no-actions"));
       return box;
     }
+    // The wrapper scrolls horizontally on narrow screens, so it must take keyboard
+    // focus and expose a name for screen readers.
     var wrap = el("div", null, "table-wrap");
+    wrap.setAttribute("tabindex", "0");
+    wrap.setAttribute("role", "region");
+    wrap.setAttribute("aria-labelledby", IMPACT_HEADING_ID);
     var table = el("table");
+    table.appendChild(el("caption", IMPACT_CAPTION, "muted"));
     var head = el("tr");
     ["Action", "Exposure reduction (approx.)", "CO2 saved (approx.)", "Basis", "Source"].forEach(function (h) {
-      head.appendChild(el("th", h));
+      var th = el("th", h);
+      th.setAttribute("scope", "col");
+      head.appendChild(th);
     });
     var thead = el("thead");
     thead.appendChild(head);
@@ -355,7 +455,7 @@
   }
 
   function renderResult(reading, plan) {
-    var host = byId("result");
+    var host = byId("result-body");
     clearNode(host);
     if (reading) {
       host.appendChild(renderAqiCard(reading));
@@ -387,7 +487,13 @@
       impact.appendChild(renderImpact(plan.impact_table));
       host.appendChild(impact);
     }
-    host.hidden = false;
+    // The heading names a plan, so it is shown only when a plan is rendered.
+    var heading = byId("result-h");
+    heading.hidden = !plan;
+    byId("result").hidden = false;
+    // Only a rendered plan takes focus; the heading announces itself, so the
+    // cleared status region stays silent. A reading-only render never moves focus.
+    if (plan) { focusControl(heading); }
   }
 
   document.addEventListener("airwise:plan", function (ev) {
@@ -415,6 +521,10 @@
   function addBubble(role, text, failed) {
     var list = byId("chat-history");
     var li = el("li", text, "bubble " + role + (failed ? " failed" : ""));
+    // Hidden speaker label for screen readers. Not stored in `history`, so the API never sees it.
+    // Inserted before the li joins the list, so the live region announces one addition.
+    var speaker = role === "user" ? "You: " : (failed ? "AirWise (error): " : "AirWise: ");
+    li.insertBefore(el("span", speaker, "visually-hidden"), li.firstChild);
     list.appendChild(li);
     list.scrollTop = list.scrollHeight;
   }
@@ -424,7 +534,12 @@
     if (chatBusy || !state.plan || message === "" || message.length > MAX_MESSAGE) { return; }
     var input = byId("chat-input");
     var send = byId("chat-send");
-    byId("starters").hidden = true;
+    var starters = byId("starters");
+    // Hiding the row removes the focused starter button from the page, which would drop focus
+    // to <body>. Move it to the chat input first, so a keyboard user can type a follow-up.
+    if (starters.contains(document.activeElement)) { focusControl(input); }
+    starters.hidden = true;
+    setStatus(byId(CHAT_STATUS_ID), "");
     addBubble("user", message, false);
     input.value = "";
     chatBusy = true;
@@ -444,11 +559,19 @@
       var failed = !data || data.failed === true || typeof data.reply !== "string" || data.reply === "";
       var text = failed ? ((data && data.reply) || CHAT_FAILURE) : data.reply;
       addBubble("assistant", text, failed);
-      history.push({ role: "user", content: message });
-      history.push({ role: "assistant", content: text });
-      history = history.slice(-MAX_HISTORY);
+      // A failed reply is shown but kept out of `history`, so the canned failure text is never
+      // sent back to the LLM as if the assistant had said it. The user's message is dropped too,
+      // so `history` stays strictly alternating user/assistant pairs of successful exchanges
+      // (same as the network-error branch below).
+      if (!failed) {
+        history.push({ role: "user", content: message });
+        history.push({ role: "assistant", content: text });
+        history = history.slice(-MAX_HISTORY);
+      }
     }, function (e) {
-      addBubble("assistant", e.detail && e.detail.message ? e.detail.message : CHAT_FAILURE, true);
+      var msg = e.detail && e.detail.message ? e.detail.message : CHAT_FAILURE;
+      addBubble("assistant", msg, true);
+      setStatus(byId(CHAT_STATUS_ID), msg, { error: true });
     }).then(function () {
       chatBusy = false;
       send.disabled = false;
@@ -465,13 +588,26 @@
     });
     byId("chat-form").addEventListener("submit", function (ev) {
       ev.preventDefault();
-      sendChat(byId("chat-input").value);
+      var input = byId("chat-input");
+      unmarkInvalid(input, CHAT_STATUS_ID);
+      if (input.value.trim() === "") {
+        setStatus(byId(CHAT_STATUS_ID), "Please type a question first.", { error: true });
+        markInvalid(input, CHAT_STATUS_ID);
+        input.focus();
+        return;
+      }
+      sendChat(input.value);
+    });
+    byId("chat-input").addEventListener("input", function () {
+      if (byId("chat-input").value.trim() !== "") { unmarkInvalid(byId("chat-input"), CHAT_STATUS_ID); }
     });
   }
 
   document.addEventListener("airwise:plan", function () {
     history = [];
     clearNode(byId("chat-history"));
+    setStatus(byId(CHAT_STATUS_ID), "");
+    unmarkInvalid(byId("chat-input"), CHAT_STATUS_ID);
     byId("starters").hidden = false;
     byId("chat").hidden = false;
   });
@@ -487,6 +623,12 @@
     byId("geo-btn").addEventListener("click", onUseLocation);
     byId("city").addEventListener("input", function () {
       if (byId("city").value.trim() !== FALLBACK_CITY) { state.coords = null; }
+    });
+    controlIds().forEach(function (id) {
+      var control = byId(id);
+      control.addEventListener(control.tagName === "SELECT" ? "change" : "input", function () {
+        revalidateControl(id);
+      });
     });
   }
 

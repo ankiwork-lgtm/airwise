@@ -104,3 +104,35 @@ def test_app_js_content_sanity():
     assert '"use strict"' in JS
     assert "window.AirWise" in JS
     assert "<script" not in JS.lower()
+
+
+def test_favicon_is_an_empty_204_with_cache_header_and_security_headers(client):
+    r = client.get("/favicon.ico")
+    assert r.status_code == 204
+    assert r.content == b""
+    assert r.headers["cache-control"] == "public, max-age=86400"
+    assert "content-type" not in r.headers
+    assert r.headers.get("content-length") in (None, "0")
+    _assert_headers(r)
+
+
+def test_favicon_is_not_in_the_openapi_schema(client):
+    assert "/favicon.ico" not in client.get("/openapi.json").json()["paths"]
+    assert "/favicon.ico" not in client.app.openapi()["paths"]
+
+
+def test_favicon_does_not_touch_any_rate_limiter(monkeypatch):
+    app = create_app()
+
+    def forbidden(key):
+        raise AssertionError(f"limiter used: {key}")
+
+    for name in ("plan_limiter", "chat_limiter", "aqi_limiter"):
+        monkeypatch.setattr(getattr(app.state, name), "check", forbidden)
+    with TestClient(app) as c:
+        for _ in range(100):
+            assert c.get("/favicon.ico").status_code == 204
+
+
+def test_favicon_head_request_does_not_error(client):
+    assert client.head("/favicon.ico").status_code < 500

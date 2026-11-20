@@ -110,6 +110,65 @@ These behaviors depend on the browser and are not covered by automated tests. Ch
 - Loading indicators: confirm one shows during the location lookup, plan generation, and chat, and that the related controls are disabled meanwhile.
 - Disclaimer: confirm it is visible on the page, and that the "indicative" label appears next to any GRAP stage and the estimated-data and fallback notices show without scrolling or interaction.
 
+### Accessibility checks
+
+These steps target WCAG 2.1 AA criteria. Passing them does not show WCAG conformance. Allow 10 to 15 minutes. Use a desktop browser at 100% zoom unless a step says otherwise. Generate one plan (for example for Delhi, with every profile field set) before the steps that need results, then use "Clear saved profile" when a step needs an empty form.
+
+#### Keyboard only
+
+Put the mouse aside for this group.
+
+- [ ] Reload the page and press Tab once. Expect the "Skip to main content" link to appear at the top left with a visible focus ring. Press Enter and expect focus to move to the main content (the main area itself shows no ring).
+- [ ] Press Tab repeatedly from the top of the page. Expect this order: skip link, City field, "Use my location", the eight profile fields, "Generate plan", "Clear saved profile". The disclaimer banner is not a Tab stop.
+- [ ] Expect a clear focus ring on every stop, never hidden under the sticky banner. Also check the first and last stops with Shift+Tab.
+- [ ] With an empty form, Tab to "Generate plan" and press Enter. Expect "Please complete these fields:" with a list, and focus on the City field. The City field is outside the form element, so pressing Enter inside it does not submit.
+- [ ] Type a city only and submit again. Expect focus on the first empty profile field ("Children present"). Choose a value there and expect its invalid mark to clear (a screen reader announces this, and the red, thicker border on the field goes away).
+- [ ] Complete the form and generate a plan. Expect focus on the "Your air quality plan" heading, with a visible ring. Press Tab once and expect focus on the impact table wrapper, with a ring.
+- [ ] Narrow the window until the impact table is wider than the window. Expect the focused wrapper to scroll left and right with the arrow keys, and no other part of the page to scroll sideways.
+- [ ] In the chat, type a question and press Enter. Expect your bubble and a reply, and focus to stay in the input.
+- [ ] Press Enter in the empty chat input. Expect "Please type a question first." and focus to stay in the input.
+- [ ] Activate a starter question with Enter or Space. The starter row hides itself after use. Expect focus to move to the chat input, so you can type a follow-up, and not to be lost to the top of the page.
+- [ ] Tab to "Clear saved profile" and press Space. Expect the form to empty and "Saved profile cleared." to appear.
+
+#### Screen reader
+
+Use NVDA with Firefox or Chrome on Windows, VoiceOver with Safari on macOS or iOS, or TalkBack or Narrator where available. Note which combination you used.
+
+- [ ] Open the landmarks list. Expect a banner, a main landmark, a contentinfo landmark (the footer), and a named region for each section: Location, Household profile, and, once a plan exists, "Your air quality plan" and "Ask a follow-up".
+- [ ] Open the headings list. Expect one h1 ("AirWise"), then h2 section headings, with h3 headings below them and no skipped levels.
+- [ ] Submit the incomplete form. Expect the error message and its list of fields to be announced once, and the focused field to be announced as invalid.
+- [ ] Generate a plan. Expect "Your air quality plan" to be announced when focus moves to it. "Generating your plan..." may be announced first. Expect no success message repeated after the heading.
+- [ ] Move into the impact table. Expect the region to be announced as "Impact table", then the caption ("Estimated exposure and CO2 reduction for each recommended action. Figures are approximate."), then the column headers (Action, Exposure reduction (approx.), CO2 saved (approx.), Basis, Source) as you move between cells.
+- [ ] Send a chat question. Expect your bubble to be announced as "You: ..." and the reply as "AirWise: ...", each once.
+- [ ] Make a chat request fail (stop the server or go offline, then send a question). Expect the failed bubble to be announced as "AirWise (error): ...". The same message also appears in the chat status area, which is an alert, so it may be read twice. Confirm whether this double announcement is annoying and record it if so.
+- [ ] Read the footer. Expect "AirWise gives general information only and is not medical advice. Air quality data from Open-Meteo."
+
+#### Zoom, reflow and motion
+
+- [ ] Set browser zoom to 200%. Expect all content and controls to stay usable and the disclaimer banner to scroll away with the page instead of staying pinned.
+- [ ] Set browser zoom to 400% in a 1280 px wide window, which is 320 CSS px wide. Expect no horizontal scrolling except inside the impact table wrapper, no cut-off text or controls, and a banner that is not pinned.
+- [ ] Make the window short (under about 512 px high, or zoom a 1024 px high window to 400%). Expect the banner to be static there too.
+- [ ] At 400%, Tab through the page. Expect each focused control to stay in view and not be covered by anything.
+- [ ] Increase only the text size (browser text-only zoom or the OS text size setting). Expect text to grow with no overlap and nothing cut off.
+- [ ] Turn on the OS reduce-motion setting ("Show animations" off in Windows, "Reduce motion" on in macOS), reload, and trigger a loading state (for example "Generate plan" with the network throttled). Expect a static filled dot instead of a spinning ring, and no other animation.
+
+#### Colour and contrast
+
+- [ ] Turn on a Windows contrast theme (forced colours). Expect text, buttons, inputs, selects, the table borders and the focus ring to stay visible and readable, and the secondary buttons ("Use my location", "Clear saved profile", starter questions) to still look like buttons.
+- [ ] Expect error messages to be understandable without colour: they are text, listed by field name.
+- [ ] Optional: run axe DevTools or the Lighthouse accessibility audit on the page with a plan shown. Expect no serious or critical issues. These tools catch only part of the issues, so a clean result does not replace the steps above.
+
+#### Not yet verified in a real browser or with assistive technology
+
+The automated tests in `tests/test_static_frontend.py` read `public/index.html`, `public/app.css` and `public/app.js` as text. They check that the expected attributes, roles, labels and CSS rules are present. They cannot prove:
+
+- what a screen reader announces, including double announcements and live region timing;
+- the real focus order, and where focus lands after a plan, an error, a starter question or a chat reply;
+- how the page looks at real zoom levels or on a real phone;
+- forced-colours rendering, or the measured contrast of the final colours.
+
+No result of the accessibility steps above is recorded yet, so treat these behaviors as unverified until a reviewer has run them. `PLAN.md` and `TASKS.md` propose browser tests as Phase 6, but whether to add them is still an open decision.
+
 ## Known limits
 
 - Rate limiting is in memory and per warm serverless instance. A client served by several instances can exceed the stated limits.
@@ -124,6 +183,7 @@ These behaviors depend on the browser and are not covered by automated tests. Ch
 - Worst-case sequential latency (8 s + 8 s + 20 s) exceeds `maxDuration` of 30 s. A 28 s request deadline shortens the LLM timeout in that case.
 - The app closes its shared HTTP clients on shutdown through a lifespan handler. On Vercel serverless the process may be frozen without a shutdown, which is harmless.
 - Geocode and air-quality lookups are cached in memory for about 5 minutes (at most 256 entries each), per instance and not shared between instances. A reading can therefore be up to 5 minutes old.
+- On Vercel, `/favicon.ico` is not routed to the FastAPI function (`vercel.json` rewrites only `/api/*`), so the empty 204 answer applies to local `uvicorn` runs; the browser's automatic favicon request may still get a 404 on Vercel, which is harmless and has not been checked on a deployment.
 - English only, and India only (CPCB bands, indicative GRAP stages, Indian cities).
 
 ## Disclaimer

@@ -112,29 +112,39 @@ Legend: `[ ]` to do, `[x]` done. "Needs input" means the task is blocked on an o
 
 All changes are in `public/index.html`, or in `public/app.css` and `public/app.js` after T3.6.
 
-- [ ] **T5.1 Respect reduced motion**
+- [x] **T5.1 Respect reduced motion**
   - Add `@media (prefers-reduced-motion: reduce)` to disable the spinner animation.
-- [ ] **T5.2 Accessible form errors**
+- [x] **T5.2 Accessible form errors**
   - Use `role="alert"` for error status regions.
   - Set `aria-invalid` and `aria-describedby` on fields the API or client validation flags.
   - Move focus to the first invalid field.
-- [ ] **T5.3 Move focus to results**
+- [x] **T5.3 Move focus to results**
   - Give the results heading `tabindex="-1"` and focus it after a plan renders.
-- [ ] **T5.4 Accessible impact table**
+- [x] **T5.4 Accessible impact table**
   - Add a `<caption>` and `scope="col"` on header cells.
-- [ ] **T5.5 Label chat speakers**
+- [x] **T5.5 Label chat speakers**
   - Add visually hidden "You:" and "AirWise:" prefixes to chat bubbles.
-- [ ] **T5.6 Focus styles and contrast**
+- [x] **T5.6 Focus styles and contrast**
   - Add `:focus-visible` styles.
   - Check text and button contrast for WCAG AA (4.5:1) and adjust colours.
-- [ ] **T5.7 Landmarks and skip link**
+- [x] **T5.7 Landmarks and skip link**
   - Add a skip link, `<header>` and `<footer>`.
-- [ ] **T5.8 Sticky banner at small sizes**
+- [x] **T5.8 Sticky banner at small sizes**
   - Make the disclaimer non-sticky on small screens and at high zoom.
-- [ ] **T5.9 Extend static tests**
+- [x] **T5.9 Extend static tests**
   - In `tests/test_static_frontend.py`, assert the new attributes, the reduced-motion rule, the caption and the skip link.
-- [ ] **T5.10 Update the README checklist**
+- [x] **T5.10 Update the README checklist**
   - Add keyboard-only and screen-reader steps to the manual browser checklist.
+- [x] **T5.11 Keep failed chat replies out of the history**
+  - In `sendChat` in `public/app.js`, do not push a `failed: true` reply into `history`, so it is not sent back to the LLM on later turns.
+  - Add a static test.
+- [x] **T5.12 Answer `/favicon.ico` with an empty 204**
+  - Add a `GET /favicon.ico` route in `airwise/main.py` that returns `204 No Content` with the security headers and no body, so browsers and logs don't show a 404 on every page load.
+  - No icon asset is added. Add a test (status, empty body, security headers).
+- [x] **T5.13 Starter-question focus and invalid-field styling**
+  - After a starter question is used, `sendChat` hides the starters row, so keyboard focus can be lost. Move focus to the chat input (or the new reply) so it is not lost.
+  - Add a visible style for `[aria-invalid="true"]` fields in `public/app.css` (for example a border or outline in the error colour that meets 3:1 contrast), so sighted users see which field is flagged.
+  - Add static tests.
 
 ## Phase 6: Frontend tests
 
