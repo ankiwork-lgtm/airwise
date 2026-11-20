@@ -148,17 +148,17 @@ All changes are in `public/index.html`, or in `public/app.css` and `public/app.j
 
 ## Phase 6: Frontend tests
 
-- [ ] **T6.1 Add the browser test harness** (needs input: Playwright wanted?)
+- [x] **T6.1 Add the browser test harness**
   - Add Playwright (Python) to the dev extras after checking maintenance and the latest stable version.
   - Add a fixture that starts the app on `127.0.0.1` and mocks `/api/*` with `page.route`.
   - Add a pytest marker so browser tests can be skipped.
-- [ ] **T6.2 Test form flows**
+- [x] **T6.2 Test form flows**
   - Cover: validation errors, successful plan render, loading and disabled states.
-- [ ] **T6.3 Test geolocation and storage**
+- [x] **T6.3 Test geolocation and storage**
   - Cover: permission denied, timeout, `localStorage` prefill, clear, and corrupted saved data.
-- [ ] **T6.4 Test chat**
+- [x] **T6.4 Test chat**
   - Cover: send, starter questions, failure bubble, and history reset after a new plan.
-- [ ] **T6.5 Add accessibility checks**
+- [x] **T6.5 Add accessibility checks**
   - Add an `axe-core` scan for the main page states and a keyboard-only path test.
   - Fix any violations found.
 - [ ] **T6.6 Run browser tests in CI**

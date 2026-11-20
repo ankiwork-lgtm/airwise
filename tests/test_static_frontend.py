@@ -166,6 +166,13 @@ def test_geolocation_errors_do_not_move_focus():
     assert "focus" not in _js_function("onUseLocation").lower()
 
 
+def test_geolocation_timer_is_cleared_once_a_position_arrives():
+    body = _js_function("onUseLocation")
+    success = body[body.index("getCurrentPosition(function (pos)") :]
+    # The timeout must not fire during the AQI lookup that follows a position.
+    assert success.index("clearTimeout(timer)") < success.index("callApi(")
+
+
 def test_chat_empty_input_is_announced_and_marked():
     assert 'id="chat-status"' in HTML
     assert 'var CHAT_STATUS_ID = "chat-status"' in JS
@@ -244,6 +251,22 @@ def test_chat_network_error_does_not_touch_history():
     _, rejected = _send_chat_handlers()
     assert 'addBubble("assistant", msg, true);' in rejected
     assert not re.search(r"(?<![\w-])history\b", rejected)
+
+
+def test_chat_reply_for_an_old_plan_is_dropped_on_new_plan():
+    # A reply still in flight when a new plan arrives must not reach the new conversation.
+    assert "var generation = chatGeneration;" in _js_function("sendChat")
+    success, rejected = _send_chat_handlers()
+    assert "if (generation !== chatGeneration) { return; }" in success
+    assert "if (generation !== chatGeneration) { return; }" in rejected
+    plan_listener = re.search(
+        r'document\.addEventListener\("airwise:plan", function \(\) \{(.*?)\n  \}\);',
+        JS,
+        re.S,
+    )
+    assert plan_listener, "expected the airwise:plan chat reset listener"
+    assert "chatGeneration += 1;" in plan_listener.group(1)
+    assert "chatBusy = false;" in plan_listener.group(1)
 
 
 def _declarations(rule_body: str) -> dict[str, str]:
@@ -527,8 +550,11 @@ def test_exactly_one_main_header_footer_landmark_each():
     assert len(re.findall(r"<header\b", HTML)) == 1
     assert len(re.findall(r"<footer\b", HTML)) == 1
     # header and footer are direct children of body, so they are banner and contentinfo.
-    assert _body_children() == ["a", "div", "header", "main", "footer", "script"]
-    assert re.search(r"<header>\s*<h1>AirWise</h1>\s*<p>[^<]+</p>\s*</header>", HTML)
+    # The disclaimer is a top-level aside landmark direct child of body so its containing block
+    # is <body> (allowing position:sticky across page scroll) and all content is within landmarks.
+    assert _body_children() == ["a", "aside", "header", "main", "footer", "script"]
+    pattern = r"<header>\s*<h1>AirWise</h1>\s*<p>[^<]+</p>\s*</header>"
+    assert re.search(pattern, HTML, re.S)
 
 
 def test_footer_text_is_short_and_only_claims_the_real_data_source():
@@ -540,8 +566,16 @@ def test_footer_text_is_short_and_only_claims_the_real_data_source():
     assert len(text) <= 120
 
 
-def test_disclaimer_note_is_kept():
-    assert len(re.findall(r'<div class="disclaimer" role="note">', HTML)) == 1
+def test_disclaimer_landmark_and_parent():
+    doc = HTMLDocument(HTML)
+    disclaimers = [el for el in doc.elements if "disclaimer" in el.attrs.get("class", "").split()]
+    assert len(disclaimers) == 1, "expected exactly one disclaimer element"
+    disc = disclaimers[0]
+    assert disc.tag == "aside"
+    assert disc.attrs.get("aria-label") == "Disclaimer"
+    assert disc.parent == "body", (
+        "disclaimer containing block must be <body> so position:sticky spans full page height"
+    )
     # The base rule (wide and tall viewports) stays sticky; the media query below un-sticks it.
     base = re.search(r"\.disclaimer\s*\{([^}]*)\}", CSS)
     assert base and _declarations(base.group(1))["position"] == "sticky"
@@ -809,8 +843,16 @@ def test_starter_use_moves_focus_to_chat_input_before_hiding_the_row():
     assert 'var input = byId("chat-input");' in body
     # Order: early-return guards, focus move, then hide. A rejected call changes nothing.
     assert guard < check.start() < hide
-    assert body.count("focusControl(") == 1
+    assert body.count("focusControl(") == 2
     assert 'byId("starters").hidden = true' not in body
+
+
+def test_send_moves_focus_to_input_before_disabling_send():
+    # A disabled button drops focus to <body>, so focus must leave Send before it is disabled.
+    body = re.sub(r"//[^\n]*", "", _js_function("sendChat"))
+    move = body.index("if (document.activeElement === send) { focusControl(input); }")
+    disable = body.index("send.disabled = true;")
+    assert move < disable
 
 
 def test_invalid_fields_have_a_visible_non_colour_cue_that_keeps_the_focus_ring():

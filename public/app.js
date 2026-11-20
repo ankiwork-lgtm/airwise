@@ -351,6 +351,8 @@
 
     navigator.geolocation.getCurrentPosition(function (pos) {
       if (settled) { return; }
+      // A position arrived: the timeout must not cut off the AQI lookup that follows.
+      clearTimeout(timer);
       var coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
       if (byId("city").value.trim() === "") { byId("city").value = FALLBACK_CITY; }
       setStatus(status, "Looking up air quality for your location...", { loading: true });
@@ -515,8 +517,10 @@
   var CHAT_FAILURE = "Sorry, I could not answer that right now. Please try again.";
 
   // Chat state lives in JS variables only (plan, reading, profile are in `state`).
+  // chatGeneration changes on every new plan, so a reply to an older plan is dropped.
   var history = [];
   var chatBusy = false;
+  var chatGeneration = 0;
 
   function addBubble(role, text, failed) {
     var list = byId("chat-history");
@@ -543,7 +547,10 @@
     addBubble("user", message, false);
     input.value = "";
     chatBusy = true;
+    // A disabled button drops focus to <body>, so move it to the input first.
+    if (document.activeElement === send) { focusControl(input); }
     send.disabled = true;
+    var generation = chatGeneration;
     var payload = {
       message: message,
       history: history.slice(-MAX_HISTORY),
@@ -556,6 +563,8 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     }).then(function (data) {
+      // The plan changed while this reply was in flight: it belongs to the old conversation.
+      if (generation !== chatGeneration) { return; }
       var failed = !data || data.failed === true || typeof data.reply !== "string" || data.reply === "";
       var text = failed ? ((data && data.reply) || CHAT_FAILURE) : data.reply;
       addBubble("assistant", text, failed);
@@ -569,10 +578,12 @@
         history = history.slice(-MAX_HISTORY);
       }
     }, function (e) {
+      if (generation !== chatGeneration) { return; }
       var msg = e.detail && e.detail.message ? e.detail.message : CHAT_FAILURE;
       addBubble("assistant", msg, true);
       setStatus(byId(CHAT_STATUS_ID), msg, { error: true });
     }).then(function () {
+      if (generation !== chatGeneration) { return; }
       chatBusy = false;
       send.disabled = false;
     });
@@ -604,6 +615,10 @@
   }
 
   document.addEventListener("airwise:plan", function () {
+    // A reply still in flight belongs to the previous plan: drop it and free Send for the new chat.
+    chatGeneration += 1;
+    chatBusy = false;
+    byId("chat-send").disabled = false;
     history = [];
     clearNode(byId("chat-history"));
     setStatus(byId(CHAT_STATUS_ID), "");

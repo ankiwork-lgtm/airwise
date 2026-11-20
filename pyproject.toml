@@ -19,6 +19,7 @@ dev = [
     "mypy>=2.4.1",
     "pytest-cov>=7.1.0",
     "pip-audit>=2.10.1",
+    "playwright>=1.65.2",
 ]
 
 [build-system]
@@ -31,6 +32,9 @@ include = ["airwise*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "browser: end-to-end tests requiring a browser (Playwright)",
+]
 
 [tool.ruff]
 line-length = 100

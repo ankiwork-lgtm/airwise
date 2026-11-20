@@ -62,6 +62,26 @@ pytest --cov=airwise --cov-report=term-missing
 
 Baseline on 2026-11-19, with branch coverage: 95.27% total (two runs gave the same figure). The enforced minimum is 93% (`fail_under` in `pyproject.toml`); it applies only when coverage is measured, so plain `pytest` is unaffected.
 
+### Browser tests
+
+End-to-end tests use Playwright (Python) to verify the frontend in a real browser against a local server on `127.0.0.1` with mocked APIs.
+
+- Install browser binaries (optional if Chrome or Edge is installed):
+  ```
+  python -m playwright install chromium
+  ```
+- Run only browser tests:
+  ```
+  pytest tests/browser
+  ```
+- Skip browser tests:
+  ```
+  pytest -m "not browser"
+  ```
+- Browser selection: tests use bundled Chromium if installed, otherwise auto-detect installed system browsers (`msedge`, `chrome`). Set `AIRWISE_BROWSER_CHANNEL` (e.g. `chrome` or `msedge`) to override. When no browser can be launched, tests are skipped cleanly rather than failing.
+- Coverage: browser tests do not affect backend coverage; the 93% coverage gate passes with or without `-m "not browser"`.
+- Accessibility scan: automated WCAG scans use a vendored copy of axe-core under `tests/browser/vendor/axe.min.js` (integrity-pinned with update instructions in `tests/browser/vendor/AXE_VERSION.md`).
+
 ## Dependency lock files
 
 - `requirements.lock` pins the runtime dependencies. `requirements-dev.lock` pins the runtime and dev dependencies.
@@ -134,7 +154,7 @@ Put the mouse aside for this group.
 
 Use NVDA with Firefox or Chrome on Windows, VoiceOver with Safari on macOS or iOS, or TalkBack or Narrator where available. Note which combination you used.
 
-- [ ] Open the landmarks list. Expect a banner, a main landmark, a contentinfo landmark (the footer), and a named region for each section: Location, Household profile, and, once a plan exists, "Your air quality plan" and "Ask a follow-up".
+- [ ] Open the landmarks list. Expect a "Disclaimer" complementary landmark (the sticky not-medical-advice banner), a banner, a main landmark, a contentinfo landmark (the footer), and a named region for each section: Location, Household profile, and, once a plan exists, "Your air quality plan" and "Ask a follow-up".
 - [ ] Open the headings list. Expect one h1 ("AirWise"), then h2 section headings, with h3 headings below them and no skipped levels.
 - [ ] Submit the incomplete form. Expect the error message and its list of fields to be announced once, and the focused field to be announced as invalid.
 - [ ] Generate a plan. Expect "Your air quality plan" to be announced when focus moves to it. "Generating your plan..." may be announced first. Expect no success message repeated after the heading.
