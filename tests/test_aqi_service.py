@@ -104,6 +104,27 @@ def test_geocode_request_parameters_and_timeouts():
     assert set(aq.extensions["timeout"].values()) == {8.0}
 
 
+def test_observed_at_is_normalised_to_utc_iso():
+    body = {"current": {"time": "2025-01-15T09:00", "pm2_5": 40, "pm10": 80}}
+    out, _ = run(make_handler(httpx.Response(200, json=body)), **city_kwargs())
+    assert out.source == "live"
+    assert out.observed_at == "2025-01-15T09:00:00Z"
+
+
+@pytest.mark.parametrize("time_value", [None, "not a time", 12345])
+def test_unusable_observed_at_is_none(time_value):
+    body = {"current": {"time": time_value, "pm2_5": 40, "pm10": 80}}
+    out, _ = run(make_handler(httpx.Response(200, json=body)), **city_kwargs())
+    assert out.source == "live"
+    assert out.observed_at is None
+
+
+def test_estimated_reading_has_no_observed_at():
+    out, _ = run(make_handler(httpx.Response(500)), **city_kwargs())
+    assert out.source == "estimated"
+    assert out.observed_at is None
+
+
 def test_no_results_is_city_not_found_with_no_aq_request():
     out, seen = run(lambda r: httpx.Response(200, json={"generationtime_ms": 1}), **city_kwargs())
     assert isinstance(out, CityNotFound)

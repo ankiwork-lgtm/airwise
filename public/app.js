@@ -383,18 +383,76 @@
 
   function pct(n) { return String(Math.round(Number(n) * 10) / 10); }
 
+  var BAND_CLASS = {
+    "Good": "band-good", "Satisfactory": "band-satisfactory", "Moderate": "band-moderate",
+    "Poor": "band-poor", "Very Poor": "band-very-poor", "Severe": "band-severe"
+  };
+
+  // Renders the observation time (UTC ISO from the API) in the viewer's local time zone.
+  function formatObserved(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) { return null; }
+    return d.toLocaleString(undefined, {
+      day: "numeric", month: "short", year: "numeric",
+      hour: "numeric", minute: "2-digit", timeZoneName: "short"
+    });
+  }
+
+  function pmTile(label, value) {
+    var tile = el("div", null, "pm-tile");
+    tile.appendChild(el("div", label, "pm-label"));
+    var num = el("div", null, "pm-value");
+    if (value === null || value === undefined) {
+      num.appendChild(el("span", "not available", "pm-na"));
+    } else {
+      num.appendChild(el("span", pct(value)));
+      num.appendChild(el("span", " \u00b5g/m\u00b3", "pm-unit"));
+    }
+    tile.appendChild(num);
+    return tile;
+  }
+
   function renderAqiCard(reading) {
-    var card = el("div", null, "card aqi");
+    var card = el("div", null, "card aqi " + (BAND_CLASS[reading.band] || ""));
     card.appendChild(el("h2", "Air quality in " + reading.location_name));
-    var line = el("p", null, "aqi-line");
-    line.appendChild(el("span", reading.aqi, "aqi-value"));
-    line.appendChild(el("span", " AQI \u2013 " + reading.band, "aqi-band"));
-    card.appendChild(line);
+    var hero = el("div", null, "aqi-hero");
+    var badge = el("div", null, "aqi-badge");
+    badge.appendChild(el("span", reading.aqi, "aqi-value"));
+    badge.appendChild(el("span", "AQI", "aqi-unit"));
+    hero.appendChild(badge);
+    var meta = el("div", null, "aqi-meta");
+    meta.appendChild(el("p", reading.band, "aqi-band"));
     var grap = el("p", null, "grap");
     var stage = reading.grap_stage === "none" ? "GRAP stage: none" : "GRAP stage: " + reading.grap_stage;
-    grap.appendChild(el("span", stage));
+    grap.appendChild(el("span", stage, "grap-pill"));
     grap.appendChild(el("span", " (" + GRAP_LABEL + ")", "muted"));
-    card.appendChild(grap);
+    meta.appendChild(grap);
+    hero.appendChild(meta);
+    card.appendChild(hero);
+    var pm = el("div", null, "pm");
+    pm.appendChild(pmTile("PM2.5", reading.pm2_5));
+    pm.appendChild(pmTile("PM10", reading.pm10));
+    card.appendChild(pm);
+    var observed = typeof reading.observed_at === "string" ? formatObserved(reading.observed_at) : null;
+    if (reading.source === "live" && observed) {
+      var when = el("p", null, "aqi-time muted");
+      when.appendChild(el("span", "Data as of "));
+      var t = el("time", observed);
+      t.setAttribute("datetime", reading.observed_at);
+      when.appendChild(t);
+      card.appendChild(when);
+    }
+
+    if (reading.source === "live" && typeof reading.source_url === "string" && reading.source_url.indexOf("https:") === 0) {
+      var src = el("p", null, "aqi-source muted");
+      src.appendChild(el("span", "Source: "));
+      var link = el("a", reading.source_url);
+      link.setAttribute("href", reading.source_url);
+      link.setAttribute("target", "_blank");
+      link.setAttribute("rel", "noopener noreferrer");
+      src.appendChild(link);
+      card.appendChild(src);
+    }
     return card;
   }
 

@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Hashable
+from datetime import UTC, datetime
 from typing import Any, Literal, NamedTuple
 
 import httpx
 
 from airwise.config import (
+    AQ_SOURCE_URL,
     AQ_URL,
     ESTIMATED_PM10,
     ESTIMATED_PM25,
@@ -137,7 +139,7 @@ class _TTLCache[V]:
         self._items.clear()
 
 
-_PM = tuple[float | None, float | None]
+_PM = tuple[float | None, float | None, str | None]  # pm2_5, pm10, observation time (UTC ISO)
 _places: _TTLCache[Place] = _TTLCache()
 _pm_readings: _TTLCache[_PM] = _TTLCache()
 
@@ -158,6 +160,21 @@ def _num(value: Any) -> float | None:
     return v
 
 
+def _observed_at(value: Any) -> str | None:
+    """Normalise the upstream observation time to UTC ISO 8601, or None if unusable.
+
+    Open-Meteo returns GMT times without an offset (e.g. "2025-01-15T09:00")."""
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _build(
     name: str,
     lat: float,
@@ -165,6 +182,7 @@ def _build(
     pm25: float | None,
     pm10: float | None,
     source: Literal["live", "estimated"],
+    observed_at: str | None = None,
 ) -> AirReading:
     aqi = compute_aqi(pm25, pm10)
     return AirReading(
@@ -177,6 +195,8 @@ def _build(
         band=band_for(aqi),
         grap_stage=grap_for(aqi),
         source=source,
+        source_url=AQ_SOURCE_URL if source == "live" else None,
+        observed_at=observed_at if source == "live" else None,
     )
 
 
@@ -232,10 +252,9 @@ async def _geocode_upstream(client: httpx.AsyncClient, city: str) -> Place:
     return Place(name, lat, lon)
 
 
-async def fetch_pm(
-    client: httpx.AsyncClient, lat: float, lon: float
-) -> tuple[float | None, float | None]:
-    """Fetch current PM2.5 and PM10. Raises httpx.HTTPError or ValueError on failure.
+async def fetch_pm(client: httpx.AsyncClient, lat: float, lon: float) -> _PM:
+    """Fetch current PM2.5, PM10 and observation time. Raises httpx.HTTPError or ValueError
+    on failure.
 
     Results are cached by coordinates rounded to 2 decimals (about 1 km); a result with
     no usable value is not cached."""
@@ -244,22 +263,20 @@ async def fetch_pm(
     if cached is not None:
         return cached
     pm = await _fetch_pm_upstream(client, lat, lon)
-    if pm != (None, None):
+    if pm[:2] != (None, None):
         _pm_readings.put(key, pm)
     return pm
 
 
-async def _fetch_pm_upstream(
-    client: httpx.AsyncClient, lat: float, lon: float
-) -> tuple[float | None, float | None]:
+async def _fetch_pm_upstream(client: httpx.AsyncClient, lat: float, lon: float) -> _PM:
     params: dict[str, str | float] = {"latitude": lat, "longitude": lon, "current": "pm2_5,pm10"}
     resp = await client.get(AQ_URL, params=params, timeout=OPEN_METEO_TIMEOUT_S)
     resp.raise_for_status()
     data = resp.json()
     current = data.get("current") if isinstance(data, dict) else None
     if not isinstance(current, dict):
-        return None, None
-    return _num(current.get("pm2_5")), _num(current.get("pm10"))
+        return None, None, None
+    return _num(current.get("pm2_5")), _num(current.get("pm10")), _observed_at(current.get("time"))
 
 
 async def get_reading(
@@ -280,9 +297,9 @@ async def get_reading(
     else:
         raise InvalidCity()
     try:
-        pm25, pm10 = await fetch_pm(client, place.latitude, place.longitude)
+        pm25, pm10, observed_at = await fetch_pm(client, place.latitude, place.longitude)
     except (httpx.HTTPError, ValueError):
         return estimated_reading(place.name, place.latitude, place.longitude)
     if pm25 is None and pm10 is None:
         return estimated_reading(place.name, place.latitude, place.longitude)
-    return _build(place.name, place.latitude, place.longitude, pm25, pm10, "live")
+    return _build(place.name, place.latitude, place.longitude, pm25, pm10, "live", observed_at)

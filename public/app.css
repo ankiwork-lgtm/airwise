@@ -72,8 +72,31 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
   .card { margin: 0 0 16px; }
-  .aqi-value { font-size: 40px; font-weight: 700; }
-  .aqi-band { font-size: 20px; font-weight: 600; }
+  /* Band colours: dark text on a light tint, each pair >= 4.5:1. The band name is always shown as
+     text, so colour is never the only cue. */
+  .aqi { --band-bg: #eef1f4; --band-fg: #1b1f23; --band-accent: #858e98; border: 1px solid #dde1e6; border-left: 6px solid var(--band-accent); border-radius: 8px; padding: 16px; background: #fff; }
+  .band-good { --band-bg: #e3f5e8; --band-fg: #0d5c2a; --band-accent: #2e9e55; }
+  .band-satisfactory { --band-bg: #eef6d9; --band-fg: #3d5a0b; --band-accent: #7fae22; }
+  .band-moderate { --band-bg: #fff4cc; --band-fg: #6b4e00; --band-accent: #e0b000; }
+  .band-poor { --band-bg: #ffe6cc; --band-fg: #8a3b00; --band-accent: #f08a1c; }
+  .band-very-poor { --band-bg: #fde0dd; --band-fg: #9a1c10; --band-accent: #e0392b; }
+  .band-severe { --band-bg: #f3d9e6; --band-fg: #6d0f3c; --band-accent: #a3165c; }
+  .aqi h2 { margin-bottom: 12px; }
+  .aqi-hero { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+  .aqi-badge { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 104px; padding: 10px 16px; border-radius: 12px; background: var(--band-bg); color: var(--band-fg); border: 2px solid var(--band-accent); }
+  .aqi-value { font-size: 44px; font-weight: 700; line-height: 1; }
+  .aqi-unit { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; margin-top: 4px; }
+  .aqi-meta p { margin: 0; }
+  .aqi-band { font-size: 22px; font-weight: 700; color: var(--band-fg); margin-bottom: 6px !important; }
+  .grap-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; background: #eef1f4; border: 1px solid #c4cad1; font-size: 14px; font-weight: 600; }
+  .pm { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px; }
+  .pm-tile { background: #f7f8fa; border: 1px solid #dde1e6; border-radius: 8px; padding: 10px 12px; }
+  .pm-label { font-size: 13px; font-weight: 600; color: #4a5560; }
+  .pm-value { font-size: 22px; font-weight: 700; }
+  .pm-unit { font-size: 13px; font-weight: 400; color: #4a5560; }
+  .pm-na { font-size: 14px; font-weight: 400; color: #4a5560; }
+  .aqi-time { margin: 0 0 4px; }
+  .aqi-source { margin: 0; overflow-wrap: anywhere; }
   .muted { color: #5b6570; font-size: 14px; }
   .notice { background: #e8f1ff; border: 1px solid #9ec0f5; border-radius: 6px; padding: 8px 12px; margin: 0 0 12px; }
   .block h3 { font-size: 16px; margin: 12px 0 6px; }

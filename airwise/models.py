@@ -22,6 +22,8 @@ class AirReading(BaseModel):
     band: CPCBBand
     grap_stage: GrapStage
     source: Literal["live", "estimated"]
+    source_url: str | None = Field(default=None, max_length=200)
+    observed_at: str | None = Field(default=None, max_length=32)  # UTC ISO 8601, live data only
 
 
 Commute = Literal["car", "two_wheeler", "bus_metro", "walk_cycle", "work_from_home"]

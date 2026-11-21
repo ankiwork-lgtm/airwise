@@ -9,6 +9,7 @@ from pathlib import Path
 
 GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
 AQ_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
+AQ_SOURCE_URL = "https://open-meteo.com/en/docs/air-quality-api"  # human-readable data source
 OPEN_METEO_TIMEOUT_S = 8.0
 LLM_TIMEOUT_S = 20.0
 REQUEST_DEADLINE_S = 28.0  # below Vercel maxDuration (30)
