@@ -1,5 +1,6 @@
 """Shared access to the static frontend files in public/."""
 
+import re
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import NamedTuple
@@ -12,6 +13,23 @@ JS = (PUBLIC / "app.js").read_text(encoding="utf-8")
 
 # Everything the browser loads for the page; used for sink and string checks.
 FRONTEND_TEXT = HTML + "\n" + CSS + "\n" + JS
+
+
+def js_function(name: str) -> str:
+    """Return the source of `function name(...) { ... }` from app.js."""
+    match = re.search(r"function\s+" + re.escape(name) + r"\s*\([^)]*\)\s*\{", JS)
+    assert match, f"function {name} not found"
+    depth, pos = 1, match.end()
+    while depth:
+        depth += {"{": 1, "}": -1}.get(JS[pos], 0)
+        pos += 1
+    return JS[match.start() : pos]
+
+
+def declarations(rule_body: str) -> dict[str, str]:
+    """Parse the body of a CSS rule into a {property: value} dict."""
+    pairs = (decl.split(":", 1) for decl in rule_body.split(";") if ":" in decl)
+    return {prop.strip(): value.strip() for prop, value in pairs}
 
 
 _VOID_TAGS = {

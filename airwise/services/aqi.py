@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Hashable
-from typing import Any, Generic, Literal, NamedTuple, TypeVar
+from typing import Any, Literal, NamedTuple
 
 import httpx
 
@@ -102,11 +102,10 @@ class Place(NamedTuple):
     longitude: float
 
 
-_V = TypeVar("_V")
 _clock: Callable[[], float] = time.monotonic  # tests patch this
 
 
-class _TTLCache(Generic[_V]):
+class _TTLCache[V]:
     """Tiny in-memory TTL cache. Values must be immutable (they are shared with callers).
 
     Every entry has the same TTL, so insertion order is also expiry order: expired entries
@@ -114,16 +113,16 @@ class _TTLCache(Generic[_V]):
     """
 
     def __init__(self) -> None:
-        self._items: dict[Hashable, tuple[float, _V]] = {}
+        self._items: dict[Hashable, tuple[float, V]] = {}
 
-    def get(self, key: Hashable) -> _V | None:
+    def get(self, key: Hashable) -> V | None:
         item = self._items.get(key)
         if item is None or item[0] <= _clock():
             self._items.pop(key, None)
             return None
         return item[1]
 
-    def put(self, key: Hashable, value: _V) -> None:
+    def put(self, key: Hashable, value: V) -> None:
         now = _clock()
         self._items.pop(key, None)  # re-insert at the end
         while self._items:

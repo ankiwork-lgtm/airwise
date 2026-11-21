@@ -172,7 +172,7 @@ def save_failure_artifacts(page: Any, nodeid: str) -> None:
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_makereport(
     item: pytest.Item, call: pytest.CallInfo[None]
-) -> Generator[None, Any, None]:
+) -> Generator[None, Any]:
     outcome = yield
     report = outcome.get_result()
     if report.when == "call" and report.failed:
@@ -392,7 +392,7 @@ class MockApi:
 
 
 @pytest.fixture(scope="session")
-def live_server() -> Generator[str, None, None]:
+def live_server() -> Generator[str]:
     """Starts the real FastAPI app bound to 127.0.0.1 on an ephemeral port in a hermetic env."""
     mp = pytest.MonkeyPatch()
     mp.delenv("ANTHROPIC_API_KEY", raising=False)
@@ -438,7 +438,7 @@ def live_server() -> Generator[str, None, None]:
 
 
 @pytest.fixture
-def browser() -> Generator[Any, None, None]:
+def browser() -> Generator[Any]:
     """Launches Playwright Chromium (bundled or system fallback).
 
     Skips when no browser is available, or fails if AIRWISE_REQUIRE_BROWSER=1 (CI).
@@ -456,9 +456,7 @@ def browser() -> Generator[Any, None, None]:
 
 
 @pytest.fixture
-def page(
-    browser: Any, live_server: str, request: pytest.FixtureRequest
-) -> Generator[Any, None, None]:
+def page(browser: Any, live_server: str, request: pytest.FixtureRequest) -> Generator[Any]:
     """Provides an isolated browser page per test with console error and CSP monitoring."""
     context = browser.new_context(
         viewport={"width": 1280, "height": 800},

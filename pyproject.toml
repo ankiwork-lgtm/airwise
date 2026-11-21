@@ -3,7 +3,7 @@ name = "airwise"
 version = "0.1.0"
 description = "GenAI assistant for low-emission routines during severe winter smog in India"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.162.5",
     "httpx>=0.28.1",
@@ -38,7 +38,7 @@ markers = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py313"
 # Ruff also formats Python code blocks inside Markdown; keep docs untouched.
 extend-exclude = ["*.md"]
 
@@ -50,7 +50,7 @@ select = ["E", "F", "I", "B", "UP"]
 extend-immutable-calls = ["fastapi.Depends", "fastapi.Query"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.13"
 files = ["airwise"]
 warn_unused_ignores = true
 warn_redundant_casts = true
@@ -61,6 +61,6 @@ source = ["airwise"]
 branch = true
 
 [tool.coverage.report]
-fail_under = 93
+fail_under = 96
 show_missing = true
 skip_covered = false

@@ -130,7 +130,7 @@ def test_llm_outcomes_map_to_valid_plan_with_at_most_one_call(data, profile, rea
     elif outcome == "error":
         llm = FakeLLM(exc=RuntimeError("boom"))
     else:
-        llm = FakeLLM(exc=asyncio.TimeoutError())
+        llm = FakeLLM(exc=TimeoutError())
 
     old = _set_key(key)
     try:

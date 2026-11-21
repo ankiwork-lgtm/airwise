@@ -18,7 +18,7 @@ Contents: [Feature set](#feature-set) | [Local setup](#local-setup) | [Environme
 
 ## Local setup
 
-1. Install Python. `pyproject.toml` declares `requires-python = ">=3.10"`. Python 3.10 is end-of-life and is not tested in CI, which runs 3.11 and 3.15. The project's `.venv` uses Python 3.15.2.
+1. Install Python 3.13 or newer. `pyproject.toml` declares `requires-python = ">=3.13"`. CI runs 3.13 (the oldest supported version) and 3.15; Python 3.10, 3.11 and 3.12 are not supported and not tested. The project's `.venv` uses Python 3.15.2.
 2. Create and activate a virtual environment.
    - Windows PowerShell: `python -m venv .venv` then `.venv\Scripts\Activate.ps1`
    - macOS/Linux: `python -m venv .venv` then `source .venv/bin/activate`
@@ -63,7 +63,7 @@ From the repository root, with the virtual environment active:
 pytest
 ```
 
-This runs all 393 tests: 296 fast tests and 97 browser tests. The tests mock the Open-Meteo and Anthropic APIs, make no external network calls, and need no Anthropic key. To run only the fast tests:
+This runs all 435 tests: 338 fast tests and 97 browser tests. The tests mock the Open-Meteo and Anthropic APIs, make no external network calls, and need no Anthropic key. To run only the fast tests:
 
 ```
 pytest -m "not browser"
@@ -75,7 +75,7 @@ pytest -m "not browser"
 pytest -m "not browser" --cov=airwise --cov-report=term-missing
 ```
 
-Current result: 96.43% total, with branch coverage. The enforced minimum is 93% (`fail_under` in `pyproject.toml`); it applies only when coverage is measured, so plain `pytest` is unaffected.
+Current result: 97.47% total, with branch coverage. The enforced minimum is 96% (`fail_under` in `pyproject.toml`); it applies only when coverage is measured, so plain `pytest` is unaffected.
 
 ### Browser tests
 
@@ -92,13 +92,13 @@ End-to-end tests use Playwright (Python) to verify the frontend in a real browse
 - Browser selection: tests use bundled Chromium if installed, otherwise auto-detect installed system browsers (`msedge`, `chrome`, then the `chromium` channel). Set `AIRWISE_BROWSER_CHANNEL` (for example `chrome` or `msedge`) to use only that channel. When no browser can be launched, tests are skipped cleanly rather than failing.
 - Require a browser: set `AIRWISE_REQUIRE_BROWSER=1` to make a missing or broken browser fail the run instead of skipping it, and to fail the run if any browser test is skipped. CI sets it in the `browser` job, so a broken browser install cannot give a green run with no tests. Leave it unset locally.
 - Failure artifacts: when a browser test fails, a full-page screenshot and the page HTML are saved in `test-results/` (git-ignored), named after the test id.
-- Coverage gate: it applies only when `--cov` is passed, so `pytest tests/browser` is unaffected. CI adds `--no-cov` anyway, because a frontend-only run would not reach 93%.
+- Coverage gate: it applies only when `--cov` is passed, so `pytest tests/browser` is unaffected. CI adds `--no-cov` anyway, because a frontend-only run would not reach 96%.
 - Accessibility scan: automated scans use a vendored copy of axe-core under `tests/browser/vendor/axe.min.js`. Its version, source and integrity hashes, and the steps to update it, are in `tests/browser/vendor/AXE_VERSION.md`.
 
 ## Dependency lock files
 
 - `requirements.lock` pins the runtime dependencies (no Playwright, no uvicorn). `requirements-dev.lock` pins the runtime and dev dependencies, including Playwright.
-- Both files are hash-pinned (`--generate-hashes`) and generated with [uv](https://docs.astral.sh/uv/) for Python 3.10, with `--universal` so one file serves all platforms. The exact command is in each file's header comment.
+- Both files are hash-pinned (`--generate-hashes`) and generated with [uv](https://docs.astral.sh/uv/) for Python 3.13, with `--universal` so one file serves all platforms. The exact command is in each file's header comment.
 - Install exactly the locked versions and verify their hashes:
   ```
   pip install --require-hashes -r requirements-dev.lock
@@ -106,8 +106,8 @@ End-to-end tests use Playwright (Python) to verify the frontend in a real browse
   ```
 - Regenerate after changing `pyproject.toml` (requires `uv`, which is not a project dependency):
   ```
-  uv pip compile pyproject.toml --generate-hashes --universal --python-version 3.10 -o requirements.lock
-  uv pip compile pyproject.toml --extra dev --generate-hashes --universal --python-version 3.10 -o requirements-dev.lock
+  uv pip compile pyproject.toml --generate-hashes --universal --python-version 3.13 -o requirements.lock
+  uv pip compile pyproject.toml --extra dev --generate-hashes --universal --python-version 3.13 -o requirements-dev.lock
   ```
 - Check the locked versions for known vulnerabilities (needs network access; CI runs the same command):
   ```
@@ -119,18 +119,18 @@ End-to-end tests use Playwright (Python) to verify the frontend in a real browse
 
 `.github/workflows/ci.yml` runs two parallel jobs on every push to `main` and every pull request:
 
-- `checks` (Python 3.11 and 3.15, 15-minute timeout): `ruff check .`, `ruff format --check .`, `mypy`, `pytest -m "not browser"` with coverage (enforcing `fail_under`), and `pip-audit` on `requirements-dev.lock`.
-- `browser` (Python 3.11, 20-minute timeout): installs Playwright's Chromium (`python -m playwright install --with-deps chromium`) and runs `pytest tests/browser -m browser --strict-markers --no-cov`. It sets `AIRWISE_REQUIRE_BROWSER=1`, so it fails, rather than skips, if the browser cannot launch or any test is skipped. On failure it uploads `test-results/` (screenshots and page HTML) as an artifact kept for 7 days.
+- `checks` (Python 3.13 and 3.15, 15-minute timeout): `ruff check .`, `ruff format --check .`, `mypy`, `pytest -m "not browser"` with coverage (enforcing `fail_under`), and `pip-audit` on `requirements-dev.lock`.
+- `browser` (Python 3.13, 20-minute timeout): installs Playwright's Chromium (`python -m playwright install --with-deps chromium`) and runs `pytest tests/browser -m browser --strict-markers --no-cov`. It sets `AIRWISE_REQUIRE_BROWSER=1`, so it fails, rather than skips, if the browser cannot launch or any test is skipped. On failure it uploads `test-results/` (screenshots and page HTML) as an artifact kept for 7 days.
 
 Both jobs install the hash-pinned `requirements-dev.lock`, then the project with `pip install --no-deps -e .`; Playwright's version, and so the browser build, comes from that lock. No secrets are needed, because the tests mock all network calls and the browser tests mock `/api/*`. The browser job has no browser download cache; each run downloads Chromium.
 
 The workflow has read-only `contents` permission, and every action is pinned to a full commit SHA with the version in a trailing comment: `actions/checkout` v7.0.1, `actions/setup-python` v7.1.0, `actions/upload-artifact` v7.0.2. `tests/test_ci_workflow.py` checks these properties.
 
-Status: the workflow has run on GitHub once, as run 44898445427 on commit f48e6ab. Both `checks` jobs (Python 3.11 and 3.15) and the `browser` job (bundled Chromium on `ubuntu-latest`, 97 tests) passed. The failure-artifact upload step was skipped because nothing failed, so that step has not been exercised.
+Status: the workflow has run on GitHub once, as run 44898445427 on commit f48e6ab, before the minimum Python was raised to 3.13. In that run both `checks` jobs (then Python 3.11 and 3.15) and the `browser` job (then Python 3.11; bundled Chromium on `ubuntu-latest`, 97 tests) passed. The current matrix (3.13 and 3.15) and the `browser` job on 3.13 have not run on GitHub yet. The failure-artifact upload step was skipped because nothing failed, so that step has not been exercised.
 
 ## Deploying to Vercel
 
-Deployment has not been verified; see "Verification status".
+Deployment has not been verified; see "Verification status". The repository does not pin a Python version for Vercel (no `.python-version`, and `vercel.json` sets no runtime). `pyproject.toml` declares `requires-python = ">=3.13"`, but which Python version Vercel runs this function on, and whether it supports 3.13 or newer, is unverified.
 
 1. Push the repository to GitHub, GitLab, or Bitbucket and import it as a new project in Vercel. No build command is needed.
 2. In Project Settings, then Environment Variables, add `ANTHROPIC_API_KEY` with your key, and `ANTHROPIC_BASE_URL` if you use a gateway.
@@ -154,7 +154,7 @@ Implemented controls, with where they live:
 - Request size: bodies over 64 KB get a 413 before the route runs (`BodySizeLimitMiddleware` in `airwise/middleware.py`).
 - Rate limits: per client IP and endpoint, fixed window of 60 seconds: 10 plan, 30 chat and 30 AQI requests, then 429 with `Retry-After` (`airwise/ratelimit.py`, `airwise/main.py`). The client IP comes from `X-Forwarded-For`; see "Known limits" for the trust condition.
 - Security headers and CSP: `SECURITY_HEADERS` (nosniff, no-referrer, frame denial, Permissions-Policy, same-origin opener policy, CSP) are set on every response, including errors, and mirrored in `vercel.json` for static files.
-- Frontend: no HTML injection sinks (`innerHTML` and similar) and no network calls except same-origin `/api/*` (`tests/test_static_frontend.py`, `tests/test_csp.py`).
+- Frontend: no HTML injection sinks (`innerHTML` and similar) and no network calls except same-origin `/api/*` (`tests/test_static_security.py`, `tests/test_csp.py`).
 - Error handling: errors use one envelope (`code`, `message`, `fields`); validation errors list field names only, never submitted values; unexpected errors return a generic 500 with no stack trace (`airwise/main.py`).
 - Logging: logs carry exception class names and status codes only, never messages, request bodies, keys or upstream response text (`tests/test_error_hygiene.py`).
 - Secrets: the key is read only from the environment or the git-ignored `.env` (`airwise/config.py`); no secret is in code or CI.
@@ -165,7 +165,7 @@ Implemented controls, with where they live:
 
 ## Accessibility
 
-Implemented, and covered by automated tests (`tests/test_static_frontend.py`, `tests/browser/test_accessibility.py`, `tests/browser/test_keyboard_path.py`, `tests/browser/test_layout.py`):
+Implemented, and covered by automated tests (`tests/test_static_forms.py`, `tests/test_static_chat_ui.py`, `tests/test_static_results.py`, `tests/test_static_landmarks.py`, `tests/test_static_aria.py`, `tests/test_static_styles.py`, `tests/browser/test_accessibility.py`, `tests/browser/test_keyboard_path.py`, `tests/browser/test_layout.py`):
 
 - Skip link to the main content, `lang="en"`, one `h1` with `h2` sections, and landmarks: a named "Disclaimer" complementary region, header, main, footer, and a named region per section.
 - Every form control has a visible label. Invalid fields get `aria-invalid` and `aria-describedby`, errors are announced as alerts and listed by field name, and focus moves to the first invalid field.
@@ -180,7 +180,7 @@ Limits: this is a set of implemented measures and automated checks, not a WCAG c
 
 ### Automated coverage
 
-Automated test suites cover 97 browser test cases (out of 393 total tests in the project) using Playwright Chromium and vendored axe-core, alongside static frontend tests:
+Automated test suites cover 97 browser test cases (out of 435 total tests in the project) using Playwright Chromium and vendored axe-core, alongside static frontend tests:
 
 - Smoke, asset types, security headers, and initial flow: `tests/browser/test_smoke.py` (5 tests)
 - Form validation errors, field error clearing, plan and impact table render, loading/disabled states, and reduced-motion spinner disabling: `tests/browser/test_form_flows.py` (10 tests)
@@ -189,7 +189,14 @@ Automated test suites cover 97 browser test cases (out of 393 total tests in the
 - Automated WCAG scans with vendored axe-core across all UI states: `tests/browser/test_accessibility.py` (11 tests)
 - End-to-end keyboard journey, skip link, impact table scrolling with arrow keys, and reflow viewports: `tests/browser/test_keyboard_path.py` (3 tests)
 - Responsive layout, sticky vs static disclaimer banner, and scroll-padding adjustments: `tests/browser/test_layout.py` (4 tests)
-- Static DOM structure, landmarks, heading outline, ARIA attributes, and contrast math: `tests/test_static_frontend.py` (59 tests)
+- Static frontend checks, 59 tests in 7 modules:
+  - Sinks, external assets, inline code, required strings: `tests/test_static_security.py` (5 tests)
+  - Form status regions, invalid-field handling, labels, button types: `tests/test_static_forms.py` (10 tests)
+  - Chat live region, speaker labels, history and focus: `tests/test_static_chat_ui.py` (11 tests)
+  - Results heading focus and impact table: `tests/test_static_results.py` (7 tests)
+  - Landmarks, heading outline, lang, viewport, sticky banner: `tests/test_static_landmarks.py` (10 tests)
+  - Ids, id references, tabindex, live regions, textual cues: `tests/test_static_aria.py` (6 tests)
+  - Reduced motion, focus rings, contrast math: `tests/test_static_styles.py` (10 tests)
 - Static chat script constraints and forbidden DOM sinks: `tests/test_static_chat.py` (3 tests)
 - Strict Content Security Policy directives and header parity: `tests/test_csp.py` (14 tests)
 
@@ -243,14 +250,15 @@ The automated browser tests (97 tests in `tests/browser/`) run in Chromium via P
 
 Verified:
 
-- CI run 44898445427 on commit f48e6ab passed (both `checks` jobs and the `browser` job); see "Continuous integration".
+- CI run 44898445427 on commit f48e6ab passed (both `checks` jobs and the `browser` job) on Python 3.11 and 3.15, before the minimum was raised to 3.13; see "Continuous integration".
 - A manual smoke run of the real app. Without an API key, the app served the fallback plan and chat degraded gracefully (`failed: true`). With a real key, the LLM plan and chat worked with the default model id and the configured base URL. The 11th plan request within 60 seconds got a 429, error envelopes and security headers were as described above, and a real browser against the real backend showed no console errors and no CSP violations.
 - The real LLM path was exercised once by hand (one plan, two chat messages). Automated tests mock it.
 
 Not verified:
 
+- CI on Python 3.13 (the `checks` matrix entry and the `browser` job); locally the code was run only on Python 3.15.2.
 - The failure-artifact upload step of the `browser` job (it has never been triggered).
-- A real Vercel deployment: how Vercel combines the headers in `vercel.json` with the same headers set by the function, whether `/favicon.ico` is routed, whether the ASGI lifespan runs, and how the per-instance limiter and cache behave across instances.
+- A real Vercel deployment: which Python version Vercel uses and whether it satisfies `requires-python = ">=3.13"`, how Vercel combines the headers in `vercel.json` with the same headers set by the function, whether `/favicon.ico` is routed, whether the ASGI lifespan runs, and how the per-instance limiter and cache behave across instances.
 - Screen readers, real zoom, forced colours, Firefox, Safari, real devices and the native geolocation prompt (see the checklist above).
 
 ## Known limits
