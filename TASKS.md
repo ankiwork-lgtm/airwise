@@ -168,7 +168,7 @@ All changes are in `public/index.html`, or in `public/app.css` and `public/app.j
 
 ## Final checks
 
-- [ ] **TF.1** `ruff`, `mypy`, `pytest --cov` and `pip-audit` all pass locally and in CI.
-- [ ] **TF.2** Manual smoke test: run the app, generate a plan, use chat, test with and without an API key.
-- [ ] **TF.3** Update the README (setup, security, accessibility, testing, known limits) to match the final state.
-- [ ] **TF.4** Tick off the Progress list in `PLAN.md`.
+- [x] **TF.1** `ruff`, `mypy`, `pytest --cov` and `pip-audit` all pass locally and in CI. (Local: 296 fast tests at 96.43%, 97 browser tests, no known vulnerabilities. CI run 44898445427 on commit f48e6ab: checks on Python 3.11 and 3.15 and the browser job all passed.)
+- [x] **TF.2** Manual smoke test: run the app, generate a plan, use chat, test with and without an API key. (Run A without key: live AQI, fallback plan, chat degradation, rate limits, error envelopes, and live browser flow all passed with 0 console/CSP errors. Run B with key: live LLM plan with valid impact table citations, follow-up chat, medical/dosage refusal guard, and zero secrets logged.)
+- [x] **TF.3** Update the README (setup, security, accessibility, testing, known limits) to match the final state. (Every statement checked against code, config, tests and CI; added Security, Accessibility and Verification status sections; CI first-run result recorded; counts 393 total, 296 fast, 97 browser; coverage 96.43%.)
+- [x] **TF.4** Tick off the Progress list in `PLAN.md`.

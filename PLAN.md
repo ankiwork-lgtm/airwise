@@ -108,17 +108,17 @@ Risk: Playwright needs a browser download. Check its maintenance status and late
 
 Each phase is a separate commit or PR, and the full suite must stay green at the end of each one.
 
-## Open questions
+## Open questions (all answered)
 
-- Is `claude-haiku-5-5` the correct model ID for the gateway?
-- Are Playwright browser tests (Phase 6) wanted, or are they too heavy for this submission?
-- Should the "don't trust client plan" change in `/api/chat` be implemented, or documented as a limitation?
+- Is `claude-haiku-5-5` the correct model ID for the gateway? Yes. It worked against the configured gateway in the TF.2 smoke test.
+- Are Playwright browser tests (Phase 6) wanted, or are they too heavy for this submission? Wanted. They sit behind a skippable `browser` marker and run in their own CI job.
+- Should the "don't trust client plan" change in `/api/chat` be implemented, or documented as a limitation? Documented as a known limit (README "Known limits").
 
 ## Progress
 
-- [ ] Phase 1: Safe cleanup
-- [ ] Phase 2: Tooling and CI
-- [ ] Phase 3: Security
-- [ ] Phase 4: Efficiency
-- [ ] Phase 5: Accessibility
-- [ ] Phase 6: Frontend tests
+- [x] Phase 1: Safe cleanup
+- [x] Phase 2: Tooling and CI
+- [x] Phase 3: Security
+- [x] Phase 4: Efficiency (T4.5, the LLM output size review, was skipped: it needs a real key and was not measured)
+- [x] Phase 5: Accessibility
+- [x] Phase 6: Frontend tests

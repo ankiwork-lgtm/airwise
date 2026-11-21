@@ -2,47 +2,58 @@
 
 AirWise is a GenAI web assistant that helps families in India handle severe winter smog. It reads the current air quality for your location, asks a short household questionnaire, and builds a personalized plan of low-emission routines, indoor air hacks, and sustainable swaps. A follow-up chat answers questions about the plan.
 
-The backend is a Python FastAPI app deployed as a single Vercel serverless function. The frontend is `public/index.html` with `public/app.css` and `public/app.js` (vanilla JavaScript, no build step). There is no database and there are no user accounts.
+The backend is a Python FastAPI app set up to deploy as a single Vercel serverless function (`api/index.py`). The frontend is `public/index.html` with `public/app.css` and `public/app.js` (vanilla JavaScript, no build step). There is no database and there are no user accounts.
+
+Contents: [Feature set](#feature-set) | [Local setup](#local-setup) | [Environment variables](#environment-variables) | [Running pytest](#running-pytest) | [Dependency lock files](#dependency-lock-files) | [Continuous integration](#continuous-integration) | [Deploying to Vercel](#deploying-to-vercel) | [Security](#security) | [Accessibility](#accessibility) | [Manual browser checklist](#manual-browser-checklist) | [Verification status](#verification-status) | [Known limits](#known-limits) | [Disclaimer](#disclaimer)
 
 ## Feature set
 
 - Live AQI for a city name or for browser coordinates, using the Open-Meteo Geocoding and Air Quality APIs (no API key needed). The AQI is computed from PM2.5 and PM10 with CPCB breakpoints and shown with its CPCB band and an indicative GRAP stage.
-- Estimated typical winter reading when the Air Quality API is unavailable, clearly flagged as estimated.
+- Estimated typical winter reading when the Air Quality API is unavailable or returns no PM values, clearly flagged as estimated.
 - Household profile form (kids, elderly, respiratory condition, commute, cooking fuel, heating, purifier, window ventilation), saved in the browser's localStorage.
-- Deterministic impact table: estimated exposure reduction and CO2 kg/day saved per action, plus an overall exposure score. The language model only explains these figures and never invents numbers.
-- Personalized plan (daily routine, indoor hacks, sustainable swaps, vulnerable-members note) with a "why it matters" line for each item.
-- Rule-based fallback plan when the Anthropic key is missing or the LLM call fails, times out, or returns invalid output.
-- Stateless follow-up chat about the plan, with suggested starter questions.
-- Input validation, a 64 KB request size limit, and per-IP rate limiting (10 plan requests, 30 chat requests, and 30 AQI lookups per 60 seconds).
+- Deterministic impact table: approximate exposure reduction and CO2 kg/day saved per action, plus an overall exposure score. The figures come from fixed rules on the server; the language model only explains them, and figures in a plan are copied from that table.
+- Personalized plan (daily routine, indoor hacks, sustainable swaps) with a "why it matters" line for each item, and a note that names each vulnerable group in the household (kids, elderly, respiratory condition).
+- Rule-based fallback plan when the Anthropic key is missing, or the LLM call fails, times out, returns invalid output, or too little request time is left.
+- Stateless follow-up chat about the plan, with suggested starter questions. It declines diagnosis, treatment, medication and requests to declare an official GRAP stage, and answers only air quality and plan questions.
 
 ## Local setup
 
-1. Install Python 3.10 or newer (`requires-python = ">=3.10"` in `pyproject.toml`). The project's `.venv` uses Python 3.15.2.
+1. Install Python. `pyproject.toml` declares `requires-python = ">=3.10"`. Python 3.10 is end-of-life and is not tested in CI, which runs 3.11 and 3.15. The project's `.venv` uses Python 3.15.2.
 2. Create and activate a virtual environment.
    - Windows PowerShell: `python -m venv .venv` then `.venv\Scripts\Activate.ps1`
    - macOS/Linux: `python -m venv .venv` then `source .venv/bin/activate`
-3. Install the package with its dev dependencies:
+3. Install the dependencies, with either of these:
+   - Locked, hash-checked versions (what CI uses; see "Dependency lock files"):
+     ```
+     pip install --require-hashes -r requirements-dev.lock
+     pip install --no-deps -e .
+     ```
+   - Or the newest versions that `pyproject.toml` allows:
+     ```
+     pip install -e ".[dev]"
+     ```
+4. Create `.env` in the repository root from the template (`Copy-Item .env.example .env` in PowerShell, `cp .env.example .env` elsewhere) and edit it. `.env` is git-ignored.
+   - Set `ANTHROPIC_API_KEY`. To run without a key, delete that line or leave the value empty. The template value `sk-` counts as a key, so the LLM call would fail and every plan would use the fallback.
+   - `.env.example` points `ANTHROPIC_BASE_URL` at an IBM gateway. For the Anthropic API directly, delete that line (the default is used) or set `https://api.anthropic.com/v1`.
+   - The app loads `.env` at startup and its values override variables already set in your shell. When there is no `.env` (for example on Vercel), it uses the process environment. Restart the server after editing `.env`.
+5. Start the server, bound to the loopback address only:
    ```
-   pip install -e ".[dev]"
+   python -m uvicorn airwise.main:create_app --factory --host 127.0.0.1 --port 8000
    ```
-4. Copy `.env.example` to `.env` and set `ANTHROPIC_API_KEY` (and `ANTHROPIC_BASE_URL` if you use a gateway). The app loads `.env` at startup, and its values override variables already set in your shell. When there is no `.env` (for example on Vercel), it uses the process environment. Restart the server after editing `.env`. Without a key, AirWise still runs and returns rule-based fallback plans.
-5. Start the server:
-   ```
-   uvicorn airwise.main:create_app --factory
-   ```
-6. Open http://127.0.0.1:8000 in a browser.
+   Do not bind it to `0.0.0.0`; see "Known limits" for the rate-limit reason.
+6. Open http://127.0.0.1:8000 in a browser. `http://127.0.0.1:8000/api/health` returns `{"status":"ok"}`.
 
 ## Environment variables
 
-These are all the variables defined in `.env.example`.
+These are all the variables defined in `.env.example` and read in `airwise/config.py`. An empty or whitespace-only value counts as unset.
 
 | Name | Required or optional | Purpose | Default |
 | --- | --- | --- | --- |
-| `ANTHROPIC_API_KEY` | Required for AI-personalized plans and chat. Optional to run the app: without it, plans use the rule-based fallback and chat reports that answers are unavailable. | API key for the Anthropic Messages API (or a compatible gateway). Read from `.env` when present, otherwise from the process environment. | None |
+| `ANTHROPIC_API_KEY` | Optional to run the app; required for AI-personalized plans and chat. Without it, plans use the rule-based fallback and chat replies that an answer is unavailable (`failed: true`). | API key for the Anthropic Messages API (or a compatible gateway). Read from `.env` when present, otherwise from the process environment. | None |
 | `ANTHROPIC_BASE_URL` | Optional | Base URL of the Messages API, ending before `/messages` (for example `https://api.servicesessentials.ibm.com/v1`). | `https://api.anthropic.com/v1` |
 | `LLM_MODEL` | Optional | Model name sent to the Messages API. | `claude-haiku-5-5` |
 
-Never commit a real key. `.env.example` holds a placeholder only.
+Never commit a real key. `.env` is git-ignored and `.env.example` holds placeholders only. The key is never written to logs or responses (`tests/test_error_hygiene.py` checks this).
 
 ## Running pytest
 
@@ -52,19 +63,23 @@ From the repository root, with the virtual environment active:
 pytest
 ```
 
-The tests mock the Open-Meteo and Anthropic APIs, make no network calls, and need no Anthropic key.
+This runs all 393 tests: 296 fast tests and 97 browser tests. The tests mock the Open-Meteo and Anthropic APIs, make no external network calls, and need no Anthropic key. To run only the fast tests:
+
+```
+pytest -m "not browser"
+```
 
 ### Coverage
 
 ```
-pytest --cov=airwise --cov-report=term-missing
+pytest -m "not browser" --cov=airwise --cov-report=term-missing
 ```
 
-Baseline on 2026-11-19, with branch coverage: 95.27% total (two runs gave the same figure). The enforced minimum is 93% (`fail_under` in `pyproject.toml`); it applies only when coverage is measured, so plain `pytest` is unaffected.
+Current result: 96.43% total, with branch coverage. The enforced minimum is 93% (`fail_under` in `pyproject.toml`); it applies only when coverage is measured, so plain `pytest` is unaffected.
 
 ### Browser tests
 
-End-to-end tests use Playwright (Python) to verify the frontend in a real browser against a local server on `127.0.0.1` with mocked APIs.
+End-to-end tests use Playwright (Python) to verify the frontend in a real browser against the real app on a local `127.0.0.1` port, with the `/api/*` calls mocked and any other request blocked.
 
 - Install browser binaries (optional if Chrome or Edge is installed):
   ```
@@ -74,46 +89,48 @@ End-to-end tests use Playwright (Python) to verify the frontend in a real browse
   ```
   pytest tests/browser
   ```
-- Skip browser tests:
-  ```
-  pytest -m "not browser"
-  ```
-- Browser selection: tests use bundled Chromium if installed, otherwise auto-detect installed system browsers (`msedge`, `chrome`). Set `AIRWISE_BROWSER_CHANNEL` (e.g. `chrome` or `msedge`) to override. When no browser can be launched, tests are skipped cleanly rather than failing.
+- Browser selection: tests use bundled Chromium if installed, otherwise auto-detect installed system browsers (`msedge`, `chrome`, then the `chromium` channel). Set `AIRWISE_BROWSER_CHANNEL` (for example `chrome` or `msedge`) to use only that channel. When no browser can be launched, tests are skipped cleanly rather than failing.
 - Require a browser: set `AIRWISE_REQUIRE_BROWSER=1` to make a missing or broken browser fail the run instead of skipping it, and to fail the run if any browser test is skipped. CI sets it in the `browser` job, so a broken browser install cannot give a green run with no tests. Leave it unset locally.
 - Failure artifacts: when a browser test fails, a full-page screenshot and the page HTML are saved in `test-results/` (git-ignored), named after the test id.
-- Coverage gate: it applies only when `--cov` is passed, so `pytest tests/browser` is unaffected; CI adds `--no-cov` anyway, because a frontend-only run would not reach 93%.
-- Coverage: browser tests do not affect backend coverage; the 93% coverage gate passes with or without `-m "not browser"`.
-- Accessibility scan: automated WCAG scans use a vendored copy of axe-core under `tests/browser/vendor/axe.min.js` (integrity-pinned with update instructions in `tests/browser/vendor/AXE_VERSION.md`).
+- Coverage gate: it applies only when `--cov` is passed, so `pytest tests/browser` is unaffected. CI adds `--no-cov` anyway, because a frontend-only run would not reach 93%.
+- Accessibility scan: automated scans use a vendored copy of axe-core under `tests/browser/vendor/axe.min.js`. Its version, source and integrity hashes, and the steps to update it, are in `tests/browser/vendor/AXE_VERSION.md`.
 
 ## Dependency lock files
 
-- `requirements.lock` pins the runtime dependencies. `requirements-dev.lock` pins the runtime and dev dependencies.
-- Both files are hash-pinned (`--generate-hashes`) and were generated with [uv](https://docs.astral.sh/uv/) 0.13.9 for Python 3.10, with `--universal` so one file serves all platforms.
+- `requirements.lock` pins the runtime dependencies (no Playwright, no uvicorn). `requirements-dev.lock` pins the runtime and dev dependencies, including Playwright.
+- Both files are hash-pinned (`--generate-hashes`) and generated with [uv](https://docs.astral.sh/uv/) for Python 3.10, with `--universal` so one file serves all platforms. The exact command is in each file's header comment.
 - Install exactly the locked versions and verify their hashes:
   ```
   pip install --require-hashes -r requirements-dev.lock
+  pip install --no-deps -e .
   ```
-- Regenerate after changing `pyproject.toml` (requires `uv`):
+- Regenerate after changing `pyproject.toml` (requires `uv`, which is not a project dependency):
   ```
   uv pip compile pyproject.toml --generate-hashes --universal --python-version 3.10 -o requirements.lock
   uv pip compile pyproject.toml --extra dev --generate-hashes --universal --python-version 3.10 -o requirements-dev.lock
   ```
-- Vercel does not read these files. It installs from `pyproject.toml`, so the lock files only make local and CI installs reproducible.
+- Check the locked versions for known vulnerabilities (needs network access; CI runs the same command):
+  ```
+  pip-audit -r requirements-dev.lock --require-hashes --strict
+  ```
+- The repository has no `requirements.txt`, and `vercel.json` does not reference these files, so the function's dependencies are expected to come from `pyproject.toml`; this is unverified (see "Verification status"). The lock files make local and CI installs reproducible.
 
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs two parallel jobs on every push to `main` and every pull request:
 
-- `checks` (Python 3.11 and 3.15): `ruff check`, `ruff format --check`, `mypy`, `pytest -m "not browser"` with coverage (enforcing `fail_under`), and `pip-audit` on `requirements-dev.lock`.
-- `browser` (Python 3.11): installs Playwright's Chromium (`python -m playwright install --with-deps chromium`) and runs `pytest tests/browser -m browser --no-cov`. It sets `AIRWISE_REQUIRE_BROWSER=1`, so it fails, rather than skips, if the browser cannot launch or any test is skipped. On failure it uploads `test-results/` (screenshots and page HTML) as an artifact kept for 7 days.
+- `checks` (Python 3.11 and 3.15, 15-minute timeout): `ruff check .`, `ruff format --check .`, `mypy`, `pytest -m "not browser"` with coverage (enforcing `fail_under`), and `pip-audit` on `requirements-dev.lock`.
+- `browser` (Python 3.11, 20-minute timeout): installs Playwright's Chromium (`python -m playwright install --with-deps chromium`) and runs `pytest tests/browser -m browser --strict-markers --no-cov`. It sets `AIRWISE_REQUIRE_BROWSER=1`, so it fails, rather than skips, if the browser cannot launch or any test is skipped. On failure it uploads `test-results/` (screenshots and page HTML) as an artifact kept for 7 days.
 
-Both jobs install the hash-pinned `requirements-dev.lock`, then the project with `pip install --no-deps -e .`; Playwright's version, and so the browser build, comes from that lock. No secrets are needed, because the tests mock all network calls and the browser tests mock `/api/*`.
+Both jobs install the hash-pinned `requirements-dev.lock`, then the project with `pip install --no-deps -e .`; Playwright's version, and so the browser build, comes from that lock. No secrets are needed, because the tests mock all network calls and the browser tests mock `/api/*`. The browser job has no browser download cache; each run downloads Chromium.
 
-The workflow has read-only `contents` permission, and every action (`actions/checkout`, `actions/setup-python`, `actions/upload-artifact`) is pinned to a full commit SHA with the version in a trailing comment. `tests/test_ci_workflow.py` checks these properties.
+The workflow has read-only `contents` permission, and every action is pinned to a full commit SHA with the version in a trailing comment: `actions/checkout` v7.0.1, `actions/setup-python` v7.1.0, `actions/upload-artifact` v7.0.2. `tests/test_ci_workflow.py` checks these properties.
 
-Status: the workflow passed `actionlint` 1.7.12 but has not run on GitHub yet, so the CI browser path (bundled Chromium on `ubuntu-latest`) is unverified. The browser job has no browser download cache; each run downloads Chromium.
+Status: the workflow has run on GitHub once, as run 44898445427 on commit f48e6ab. Both `checks` jobs (Python 3.11 and 3.15) and the `browser` job (bundled Chromium on `ubuntu-latest`, 97 tests) passed. The failure-artifact upload step was skipped because nothing failed, so that step has not been exercised.
 
 ## Deploying to Vercel
+
+Deployment has not been verified; see "Verification status".
 
 1. Push the repository to GitHub, GitLab, or Bitbucket and import it as a new project in Vercel. No build command is needed.
 2. In Project Settings, then Environment Variables, add `ANTHROPIC_API_KEY` with your key, and `ANTHROPIC_BASE_URL` if you use a gateway.
@@ -121,14 +138,43 @@ Status: the workflow passed `actionlint` 1.7.12 but has not run on GitHub yet, s
 4. Deploy. `vercel.json` routes `/api/*` to the `api/index.py` function (`maxDuration` 30 seconds) and serves the page from `public/`.
    `vercel.json` also sets the security headers for the static files in `public/`, which never pass through the FastAPI middleware.
    Keep these values in sync with `SECURITY_HEADERS` in `airwise/middleware.py`; `tests/test_vercel_config.py` fails if they differ.
-
 5. Confirm the deployment: open `/api/health` and check that it returns a healthy response, then open the root page and generate a plan for a city.
 
 ### Content-Security-Policy
 
-A strict `Content-Security-Policy` is set (same-origin only; no inline scripts or styles). Any new inline script or style, third-party script, font or CDN needs the policy updated in `airwise/middleware.py` and `vercel.json`; `tests/test_csp.py` enforces that they match and that the page still fits the policy.
+A strict `Content-Security-Policy` is set (same-origin only; no inline scripts or styles; `frame-ancestors`, `base-uri` and `object-src` locked down). It is defined once in `airwise/middleware.py` and mirrored in `vercel.json`. Any new inline script or style, third-party script, font or CDN needs the policy updated in both files; `tests/test_csp.py` enforces that they match and that the page still fits the policy.
 Never add `'unsafe-inline'` or `'unsafe-eval'`; move the code or styles into `public/app.js` or `public/app.css` instead.
 No `report-uri` or `report-to` is configured, so violations only show in the browser console.
+
+## Security
+
+Implemented controls, with where they live:
+
+- Input validation: Pydantic models reject unknown fields and enforce types, ranges and length limits (`airwise/models.py`); `/api/aqi` checks `lat` and `lon` ranges.
+- Request size: bodies over 64 KB get a 413 before the route runs (`BodySizeLimitMiddleware` in `airwise/middleware.py`).
+- Rate limits: per client IP and endpoint, fixed window of 60 seconds: 10 plan, 30 chat and 30 AQI requests, then 429 with `Retry-After` (`airwise/ratelimit.py`, `airwise/main.py`). The client IP comes from `X-Forwarded-For`; see "Known limits" for the trust condition.
+- Security headers and CSP: `SECURITY_HEADERS` (nosniff, no-referrer, frame denial, Permissions-Policy, same-origin opener policy, CSP) are set on every response, including errors, and mirrored in `vercel.json` for static files.
+- Frontend: no HTML injection sinks (`innerHTML` and similar) and no network calls except same-origin `/api/*` (`tests/test_static_frontend.py`, `tests/test_csp.py`).
+- Error handling: errors use one envelope (`code`, `message`, `fields`); validation errors list field names only, never submitted values; unexpected errors return a generic 500 with no stack trace (`airwise/main.py`).
+- Logging: logs carry exception class names and status codes only, never messages, request bodies, keys or upstream response text (`tests/test_error_hygiene.py`).
+- Secrets: the key is read only from the environment or the git-ignored `.env` (`airwise/config.py`); no secret is in code or CI.
+- LLM output: validated against a schema, impact figures are copied from the server-side table, and unknown table ids are dropped (`airwise/services/plan.py`). Strings from the caller are passed to the model as data inside a JSON object, with prompt rules not to follow them as instructions.
+- Timeouts: shared `httpx` clients with 8 s per Open-Meteo call and 20 s per LLM call (no retries), inside a 28 s request deadline (`airwise/config.py`, `airwise/services/llm.py`).
+- Network binding: the setup commands and the browser test server bind to `127.0.0.1`, and nothing in the repository binds `0.0.0.0`.
+- Dependencies and CI: hash-pinned locks installed with `--require-hashes`, `pip-audit --strict` in CI, actions pinned to commit SHAs, read-only workflow permissions, and `persist-credentials: false` on checkout.
+
+## Accessibility
+
+Implemented, and covered by automated tests (`tests/test_static_frontend.py`, `tests/browser/test_accessibility.py`, `tests/browser/test_keyboard_path.py`, `tests/browser/test_layout.py`):
+
+- Skip link to the main content, `lang="en"`, one `h1` with `h2` sections, and landmarks: a named "Disclaimer" complementary region, header, main, footer, and a named region per section.
+- Every form control has a visible label. Invalid fields get `aria-invalid` and `aria-describedby`, errors are announced as alerts and listed by field name, and focus moves to the first invalid field.
+- After a plan renders, focus moves to the "Your air quality plan" heading. The impact table has a caption, `scope="col"` headers, and a focusable, named, scrollable wrapper.
+- Chat bubbles carry a hidden speaker label ("You:", "AirWise:", "AirWise (error):") and are not sent back to the API.
+- Visible focus outlines of at least 2 px, text contrast ratios checked in a test, and a non-colour cue (thicker border and text) for invalid fields.
+- `prefers-reduced-motion` stops the spinner and other motion. At widths up to 40em or heights up to 32em the disclaimer banner stops being sticky, so it does not cover content at high zoom.
+
+Limits: this is a set of implemented measures and automated checks, not a WCAG conformance claim. Real screen reader output, real zoom, forced colours, other browser engines and real devices are not verified; use the checklist below.
 
 ## Manual browser checklist
 
@@ -189,30 +235,42 @@ Use NVDA with Firefox or Chrome on Windows, VoiceOver with Safari on macOS or iO
 - [ ] Expect error messages to be understandable without colour: they are text, listed by field name with thicker borders.
 - [ ] Optional: run the Lighthouse accessibility audit on the page with a plan shown. Expect no accessibility failures (automated axe-core scans already run in `tests/browser/test_accessibility.py`).
 
-#### Not yet verified in a real browser or with assistive technology
+#### Not yet verified
 
-Automated browser tests (97 tests in `tests/browser/`) verify DOM rendering, keyboard focus progression, ARIA attributes, responsive layout, and axe-core rules in Chromium via Playwright. However:
+The automated browser tests (97 tests in `tests/browser/`) run in Chromium via Playwright. Everything listed under "Not verified" in "Verification status" below still needs human testing: screen reader output (including the possible double announcement of chat errors), real zoom and text-only scaling, forced colours, Firefox and Safari, and real devices.
 
-- The GitHub Actions CI workflow (`.github/workflows/ci.yml`) defines the `browser` job, but it has not yet run on GitHub, so CI execution on Ubuntu runners remains unverified.
-- Assistive technology speech output (screen reader live announcements, rotor navigation, and double-announcement evaluation) cannot be automated and requires human testing.
-- Real browser zoom (200% and 400%), text-only scaling, and Windows forced colours require manual inspection.
-- Other browser engines (Firefox, Safari) and physical mobile devices have not been tested.
+## Verification status
+
+Verified:
+
+- CI run 44898445427 on commit f48e6ab passed (both `checks` jobs and the `browser` job); see "Continuous integration".
+- A manual smoke run of the real app. Without an API key, the app served the fallback plan and chat degraded gracefully (`failed: true`). With a real key, the LLM plan and chat worked with the default model id and the configured base URL. The 11th plan request within 60 seconds got a 429, error envelopes and security headers were as described above, and a real browser against the real backend showed no console errors and no CSP violations.
+- The real LLM path was exercised once by hand (one plan, two chat messages). Automated tests mock it.
+
+Not verified:
+
+- The failure-artifact upload step of the `browser` job (it has never been triggered).
+- A real Vercel deployment: how Vercel combines the headers in `vercel.json` with the same headers set by the function, whether `/favicon.ico` is routed, whether the ASGI lifespan runs, and how the per-instance limiter and cache behave across instances.
+- Screen readers, real zoom, forced colours, Firefox, Safari, real devices and the native geolocation prompt (see the checklist above).
 
 ## Known limits
 
 - Rate limiting is in memory and per warm serverless instance. A client served by several instances can exceed the stated limits.
-- Client IP for rate limiting is the first valid `X-Forwarded-For` entry, otherwise the socket peer. This is safe only behind a proxy that sets or overwrites the header, as Vercel does.
+- Client IP for rate limiting is the first valid `X-Forwarded-For` entry, otherwise the socket peer. This is safe only behind a proxy that sets or overwrites the header, as Vercel is expected to.
   If the app is run directly (for example `uvicorn` exposed on a network) or behind a proxy that appends to the header instead of overwriting it, a client can send its own `X-Forwarded-For` and pick its own rate-limit bucket, bypassing the per-IP limits.
   Mitigation: keep the app bound to `127.0.0.1` locally, or put it behind a trusted proxy.
-- The AQI uses instantaneous Open-Meteo PM2.5 and PM10 values, not CPCB 24-hour averages, so it only approximates the official AQI.
-- Chat replies are grounded in the supplied plan and impact table through the prompt. This cannot be fully verified by code.
+- Geocode and air-quality lookups are cached in memory for about 5 minutes (at most 256 entries each), per instance and not shared between instances. A reading can therefore be up to 5 minutes old.
+- Live data depends on Open-Meteo. The AQI uses instantaneous PM2.5 and PM10 values, not CPCB 24-hour averages, so it only approximates the official AQI. If the city lookup fails, the request returns an error; the estimated reading (fixed typical winter PM values) is used only when the air-quality lookup fails or returns no PM values.
+- The GRAP stage is indicative and not an official declaration. Impact figures are approximate estimates from fixed rules.
 - `/api/chat` is stateless, so the browser sends back the `plan`, `reading` and `profile` it received, and the server does not check them against anything it issued. The request schema limits their shape, field lengths and list sizes, but a caller can still put arbitrary text and altered figures into them.
   What this means: the chat model answers from whatever the caller supplied, so figures in a chat reply are only as trustworthy as that input. The reply goes back to the same caller, and the per-IP chat limit, the 64 KB body limit and the prompt rules (treat supplied strings as data, never invent numbers, stay on topic) bound the cost and the effect. There is no cross-user exposure, because nothing is stored or shared.
   Not done: signing the plan on the server, or recomputing it from the profile and reading. Either would change the request format and the frontend.
-- Worst-case sequential latency (8 s + 8 s + 20 s) exceeds `maxDuration` of 30 s. A 28 s request deadline shortens the LLM timeout in that case.
+- Chat replies are kept on topic and grounded in the supplied plan through the prompt and a model-set `on_topic` flag, plus a keyword guard for diagnosis, treatment, medication and GRAP declarations. This cannot be fully verified by code.
+- Worst-case sequential latency (8 s + 8 s + 20 s) exceeds `maxDuration` of 30 s. A 28 s request deadline shortens the LLM timeout in that case, and the LLM call is skipped (fallback plan) when less than 2 s remain.
 - The app closes its shared HTTP clients on shutdown through a lifespan handler. On Vercel serverless the process may be frozen without a shutdown, which is harmless.
-- Geocode and air-quality lookups are cached in memory for about 5 minutes (at most 256 entries each), per instance and not shared between instances. A reading can therefore be up to 5 minutes old.
-- On Vercel, `/favicon.ico` is not routed to the FastAPI function (`vercel.json` rewrites only `/api/*`), so the empty 204 answer applies to local `uvicorn` runs; the browser's automatic favicon request may still get a 404 on Vercel, which is harmless and has not been checked on a deployment.
+- On Vercel, `vercel.json` rewrites only `/api/*`, so `/favicon.ico` is not routed to the FastAPI function. The empty 204 answer applies to local `uvicorn` runs; on Vercel the browser's automatic favicon request may get a 404, which is harmless.
+- The app does not set `Strict-Transport-Security` (the code leaves HSTS to the TLS terminator), and `vercel.json` does not set it either.
+- Nothing is stored on the server. The browser's localStorage holds only the household profile (key `airwise.profile`).
 - English only, and India only (CPCB bands, indicative GRAP stages, Indian cities).
 
 ## Disclaimer
