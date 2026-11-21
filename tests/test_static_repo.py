@@ -22,9 +22,10 @@ def test_env_example_lists_vars_without_real_key():
     assert value in ("", "sk-") or "your" in value.lower() or "here" in value.lower()
 
 
-def test_vercel_json_rewrite_and_duration():
+def test_vercel_json_no_api_rewrite_and_duration():
     cfg = json.loads((ROOT / "vercel.json").read_text(encoding="utf-8"))
-    assert {"source": "/api/(.*)", "destination": "/api/index"} in cfg["rewrites"]
+    # A rewrite to /api/index changes the path FastAPI sees and makes every /api/* call 404.
+    assert "rewrites" not in cfg
     max_duration = cfg["functions"]["api/index.py"]["maxDuration"]
     assert LLM_TIMEOUT_S + 2 <= max_duration
 

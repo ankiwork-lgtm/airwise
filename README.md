@@ -135,7 +135,7 @@ Deployment has not been verified; see "Verification status". The repository does
 1. Push the repository to GitHub, GitLab, or Bitbucket and import it as a new project in Vercel. No build command is needed.
 2. In Project Settings, then Environment Variables, add `ANTHROPIC_API_KEY` with your key, and `ANTHROPIC_BASE_URL` if you use a gateway.
 3. Optionally add `LLM_MODEL`. If you do not set it, AirWise uses the default model `claude-haiku-5-5`.
-4. Deploy. `vercel.json` routes `/api/*` to the `api/index.py` function (`maxDuration` 30 seconds) and serves the page from `public/`.
+4. Deploy. Vercel's FastAPI support sends requests to the `api/index.py` function with the original path, so `vercel.json` has no `rewrites` (a rewrite to `/api/index` makes FastAPI see `/api/index` and answer 404 for every `/api/*` call). The function has `maxDuration` 30 seconds, and the page is served from `public/`.
    `vercel.json` also sets the security headers for the static files in `public/`, which never pass through the FastAPI middleware.
    Keep these values in sync with `SECURITY_HEADERS` in `airwise/middleware.py`; `tests/test_vercel_config.py` fails if they differ.
 5. Confirm the deployment: open `/api/health` and check that it returns a healthy response, then open the root page and generate a plan for a city.

@@ -14,8 +14,8 @@ def _rule_pairs() -> list[tuple[str, str]]:
     return [(h["key"], h["value"]) for h in RULES[0]["headers"]]
 
 
-def test_vercel_json_keeps_rewrites_and_functions():
-    assert CONFIG["rewrites"]
+def test_vercel_json_keeps_functions_without_rewrites():
+    assert "rewrites" not in CONFIG
     function = CONFIG["functions"]["api/index.py"]
     assert function["maxDuration"] == 30
     assert function["includeFiles"] == "public/**"
