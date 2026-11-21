@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import socket
 import threading
 import time
@@ -26,6 +27,10 @@ from airwise.models import (
     PlanResponse,
     Routine,
 )
+from tests.browser.launch import REQUIRE_ENV, browser_unavailable, launch_chromium
+
+ARTIFACT_DIR = Path("test-results")
+_skipped: list[str] = []
 
 DEFAULT_READING = AirReading(
     location_name="Delhi",
@@ -136,6 +141,44 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
         fspath_parts = Path(str(item.fspath)).parts
         if "browser" in fspath_parts:
             item.add_marker(pytest.mark.browser)
+
+
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    if report.skipped:
+        _skipped.append(report.nodeid)
+
+
+def pytest_sessionfinish(session: pytest.Session) -> None:
+    """With AIRWISE_REQUIRE_BROWSER=1 (CI) a browser run with any skipped test is a failure."""
+    if os.environ.get(REQUIRE_ENV) == "1" and _skipped and session.exitstatus == 0:
+        print(f"\n{REQUIRE_ENV}=1: {len(_skipped)} browser test(s) skipped; failing the run.")
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED
+
+
+def save_failure_artifacts(page: Any, nodeid: str) -> None:
+    """Save a screenshot and the page HTML to test-results/ (git-ignored); never raises.
+
+    Pages only ever show the local app with mocked APIs, so no secrets are captured.
+    """
+    stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", nodeid).strip("_")[-150:]
+    try:
+        ARTIFACT_DIR.mkdir(exist_ok=True)
+        page.screenshot(path=str(ARTIFACT_DIR / f"{stem}.png"), full_page=True)
+        (ARTIFACT_DIR / f"{stem}.html").write_text(page.content(), encoding="utf-8")
+    except Exception:
+        pass
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(
+    item: pytest.Item, call: pytest.CallInfo[None]
+) -> Generator[None, Any, None]:
+    outcome = yield
+    report = outcome.get_result()
+    if report.when == "call" and report.failed:
+        page = getattr(item, "funcargs", {}).get("page")
+        if page is not None:
+            save_failure_artifacts(page, item.nodeid)
 
 
 class RecordedRequest:
@@ -396,39 +439,26 @@ def live_server() -> Generator[str, None, None]:
 
 @pytest.fixture
 def browser() -> Generator[Any, None, None]:
-    """Launches Playwright Chromium (bundled or system fallback), or skips if unavailable."""
+    """Launches Playwright Chromium (bundled or system fallback).
+
+    Skips when no browser is available, or fails if AIRWISE_REQUIRE_BROWSER=1 (CI).
+    """
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
-        pytest.skip("Playwright is not installed.")
+        browser_unavailable("Playwright is not installed.")
+        return
 
     with sync_playwright() as p:
-        env_channel = os.environ.get("AIRWISE_BROWSER_CHANNEL")
-        channels_to_try = [env_channel] if env_channel else [None, "msedge", "chrome", "chromium"]
-
-        launched_browser = None
-        for ch in channels_to_try:
-            try:
-                if ch is None:
-                    launched_browser = p.chromium.launch(headless=True)
-                else:
-                    launched_browser = p.chromium.launch(headless=True, channel=ch)
-                break
-            except Exception:
-                continue
-
-        if launched_browser is None:
-            pytest.skip(
-                "No Playwright browser available "
-                "(run 'python -m playwright install chromium' or install Edge/Chrome)."
-            )
-
+        launched_browser = launch_chromium(p)
         yield launched_browser
         launched_browser.close()
 
 
 @pytest.fixture
-def page(browser: Any, live_server: str) -> Generator[Any, None, None]:
+def page(
+    browser: Any, live_server: str, request: pytest.FixtureRequest
+) -> Generator[Any, None, None]:
     """Provides an isolated browser page per test with console error and CSP monitoring."""
     context = browser.new_context(
         viewport={"width": 1280, "height": 800},
@@ -476,6 +506,8 @@ def page(browser: Any, live_server: str) -> Generator[Any, None, None]:
     except Exception:
         pass
 
+    if console_errors or page_errors or csp_violations:
+        save_failure_artifacts(p, request.node.nodeid)
     context.close()
 
     if console_errors:

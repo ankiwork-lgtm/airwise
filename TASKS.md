@@ -161,9 +161,9 @@ All changes are in `public/index.html`, or in `public/app.css` and `public/app.j
 - [x] **T6.5 Add accessibility checks**
   - Add an `axe-core` scan for the main page states and a keyboard-only path test.
   - Fix any violations found.
-- [ ] **T6.6 Run browser tests in CI**
+- [x] **T6.6 Run browser tests in CI**
   - Add a separate CI job that installs browsers and runs the marked tests.
-- [ ] **T6.7 Trim the manual checklist**
+- [x] **T6.7 Trim the manual checklist**
   - Remove items in the README now covered by automated tests.
 
 ## Final checks

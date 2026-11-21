@@ -79,6 +79,9 @@ End-to-end tests use Playwright (Python) to verify the frontend in a real browse
   pytest -m "not browser"
   ```
 - Browser selection: tests use bundled Chromium if installed, otherwise auto-detect installed system browsers (`msedge`, `chrome`). Set `AIRWISE_BROWSER_CHANNEL` (e.g. `chrome` or `msedge`) to override. When no browser can be launched, tests are skipped cleanly rather than failing.
+- Require a browser: set `AIRWISE_REQUIRE_BROWSER=1` to make a missing or broken browser fail the run instead of skipping it, and to fail the run if any browser test is skipped. CI sets it in the `browser` job, so a broken browser install cannot give a green run with no tests. Leave it unset locally.
+- Failure artifacts: when a browser test fails, a full-page screenshot and the page HTML are saved in `test-results/` (git-ignored), named after the test id.
+- Coverage gate: it applies only when `--cov` is passed, so `pytest tests/browser` is unaffected; CI adds `--no-cov` anyway, because a frontend-only run would not reach 93%.
 - Coverage: browser tests do not affect backend coverage; the 93% coverage gate passes with or without `-m "not browser"`.
 - Accessibility scan: automated WCAG scans use a vendored copy of axe-core under `tests/browser/vendor/axe.min.js` (integrity-pinned with update instructions in `tests/browser/vendor/AXE_VERSION.md`).
 
@@ -99,10 +102,16 @@ End-to-end tests use Playwright (Python) to verify the frontend in a real browse
 
 ## Continuous integration
 
-- `.github/workflows/ci.yml` runs on every push to `main` and every pull request: `ruff check`, `ruff format --check`, `mypy`, `pytest` with coverage (enforcing `fail_under`), and `pip-audit` on `requirements-dev.lock`.
-- It installs the hash-pinned `requirements-dev.lock`, then the project itself with `pip install --no-deps -e .`.
-- It runs on Python 3.11 and 3.15 and needs no secrets, because the tests mock all network calls.
-- The workflow has read-only `contents` permission, and both actions are pinned to full commit SHAs (the version is in a trailing comment).
+`.github/workflows/ci.yml` runs two parallel jobs on every push to `main` and every pull request:
+
+- `checks` (Python 3.11 and 3.15): `ruff check`, `ruff format --check`, `mypy`, `pytest -m "not browser"` with coverage (enforcing `fail_under`), and `pip-audit` on `requirements-dev.lock`.
+- `browser` (Python 3.11): installs Playwright's Chromium (`python -m playwright install --with-deps chromium`) and runs `pytest tests/browser -m browser --no-cov`. It sets `AIRWISE_REQUIRE_BROWSER=1`, so it fails, rather than skips, if the browser cannot launch or any test is skipped. On failure it uploads `test-results/` (screenshots and page HTML) as an artifact kept for 7 days.
+
+Both jobs install the hash-pinned `requirements-dev.lock`, then the project with `pip install --no-deps -e .`; Playwright's version, and so the browser build, comes from that lock. No secrets are needed, because the tests mock all network calls and the browser tests mock `/api/*`.
+
+The workflow has read-only `contents` permission, and every action (`actions/checkout`, `actions/setup-python`, `actions/upload-artifact`) is pinned to a full commit SHA with the version in a trailing comment. `tests/test_ci_workflow.py` checks these properties.
+
+Status: the workflow passed `actionlint` 1.7.12 but has not run on GitHub yet, so the CI browser path (bundled Chromium on `ubuntu-latest`) is unverified. The browser job has no browser download cache; each run downloads Chromium.
 
 ## Deploying to Vercel
 
@@ -123,12 +132,26 @@ No `report-uri` or `report-to` is configured, so violations only show in the bro
 
 ## Manual browser checklist
 
-These behaviors depend on the browser and are not covered by automated tests. Check them before a release.
+### Automated coverage
 
-- Geolocation: grant permission and confirm the AQI loads; deny permission and confirm the "enter a city name" message appears and the city input stays enabled; let it time out (10 seconds) and confirm the same.
-- localStorage: generate a plan and reload to confirm the form is prefilled; use clear-saved-profile and confirm the form empties; corrupt the saved entry (edit it in dev tools) and confirm the page shows an empty form and removes the entry; disable localStorage and confirm the plan still displays without a blocking error.
-- Loading indicators: confirm one shows during the location lookup, plan generation, and chat, and that the related controls are disabled meanwhile.
-- Disclaimer: confirm it is visible on the page, and that the "indicative" label appears next to any GRAP stage and the estimated-data and fallback notices show without scrolling or interaction.
+Automated test suites cover 97 browser test cases (out of 393 total tests in the project) using Playwright Chromium and vendored axe-core, alongside static frontend tests:
+
+- Smoke, asset types, security headers, and initial flow: `tests/browser/test_smoke.py` (5 tests)
+- Form validation errors, field error clearing, plan and impact table render, loading/disabled states, and reduced-motion spinner disabling: `tests/browser/test_form_flows.py` (10 tests)
+- Geolocation error callbacks, timeout, localStorage prefill, clear-saved-profile, corrupt JSON recovery (20 variations), and storage quota/access errors: `tests/browser/test_geolocation_storage.py` (40 tests)
+- Chat interactions, history trimming to 10 turns, history reset on new plan, starter activation focus, blank input refusal, and error alerts: `tests/browser/test_chat.py` (24 tests)
+- Automated WCAG scans with vendored axe-core across all UI states: `tests/browser/test_accessibility.py` (11 tests)
+- End-to-end keyboard journey, skip link, impact table scrolling with arrow keys, and reflow viewports: `tests/browser/test_keyboard_path.py` (3 tests)
+- Responsive layout, sticky vs static disclaimer banner, and scroll-padding adjustments: `tests/browser/test_layout.py` (4 tests)
+- Static DOM structure, landmarks, heading outline, ARIA attributes, and contrast math: `tests/test_static_frontend.py` (59 tests)
+- Static chat script constraints and forbidden DOM sinks: `tests/test_static_chat.py` (3 tests)
+- Strict Content Security Policy directives and header parity: `tests/test_csp.py` (14 tests)
+
+The checklist below is trimmed to what automated tests do not cover: human visual judgement, real assistive technology speech output, native browser permission dialogs, alternative browser engines, and real mobile devices. Check them before a release.
+
+- Geolocation permission prompt: click "Use my location" on a real browser and device to confirm the native browser permission prompt appears and behaves as expected (automated tests drive the Geolocation API and context permissions, but cannot test native browser dialogs).
+- Visual notice checks: confirm that the "indicative" label next to the GRAP stage, the estimated-data notice, and fallback notices are visually clear without clipping or unwanted scrolling.
+- Alternative browser engines and mobile devices: verify basic plan generation and chat in Firefox (Gecko), Safari (WebKit / iOS), and Chrome for Android, including touchscreen interactions and virtual keyboard behavior.
 
 ### Accessibility checks
 
@@ -138,17 +161,7 @@ These steps target WCAG 2.1 AA criteria. Passing them does not show WCAG conform
 
 Put the mouse aside for this group.
 
-- [ ] Reload the page and press Tab once. Expect the "Skip to main content" link to appear at the top left with a visible focus ring. Press Enter and expect focus to move to the main content (the main area itself shows no ring).
-- [ ] Press Tab repeatedly from the top of the page. Expect this order: skip link, City field, "Use my location", the eight profile fields, "Generate plan", "Clear saved profile". The disclaimer banner is not a Tab stop.
-- [ ] Expect a clear focus ring on every stop, never hidden under the sticky banner. Also check the first and last stops with Shift+Tab.
-- [ ] With an empty form, Tab to "Generate plan" and press Enter. Expect "Please complete these fields:" with a list, and focus on the City field. The City field is outside the form element, so pressing Enter inside it does not submit.
-- [ ] Type a city only and submit again. Expect focus on the first empty profile field ("Children present"). Choose a value there and expect its invalid mark to clear (a screen reader announces this, and the red, thicker border on the field goes away).
-- [ ] Complete the form and generate a plan. Expect focus on the "Your air quality plan" heading, with a visible ring. Press Tab once and expect focus on the impact table wrapper, with a ring.
-- [ ] Narrow the window until the impact table is wider than the window. Expect the focused wrapper to scroll left and right with the arrow keys, and no other part of the page to scroll sideways.
-- [ ] In the chat, type a question and press Enter. Expect your bubble and a reply, and focus to stay in the input.
-- [ ] Press Enter in the empty chat input. Expect "Please type a question first." and focus to stay in the input.
-- [ ] Activate a starter question with Enter or Space. The starter row hides itself after use. Expect focus to move to the chat input, so you can type a follow-up, and not to be lost to the top of the page.
-- [ ] Tab to "Clear saved profile" and press Space. Expect the form to empty and "Saved profile cleared." to appear.
+- [ ] Tab through the interactive controls and confirm that every focus ring is visually clear, distinct, unbroken, and never obscured by surrounding elements or the banner across different monitors and rendering engines (the complete tab path, focus movement, and outline presence are verified by `tests/browser/test_keyboard_path.py`).
 
 #### Screen reader
 
@@ -166,28 +179,24 @@ Use NVDA with Firefox or Chrome on Windows, VoiceOver with Safari on macOS or iO
 #### Zoom, reflow and motion
 
 - [ ] Set browser zoom to 200%. Expect all content and controls to stay usable and the disclaimer banner to scroll away with the page instead of staying pinned.
-- [ ] Set browser zoom to 400% in a 1280 px wide window, which is 320 CSS px wide. Expect no horizontal scrolling except inside the impact table wrapper, no cut-off text or controls, and a banner that is not pinned.
-- [ ] Make the window short (under about 512 px high, or zoom a 1024 px high window to 400%). Expect the banner to be static there too.
+- [ ] Set browser zoom to 400% in a 1280 px wide window (320 CSS px wide). Expect no horizontal scrolling except inside the impact table wrapper, no cut-off text or controls, and a banner that is not pinned.
 - [ ] At 400%, Tab through the page. Expect each focused control to stay in view and not be covered by anything.
 - [ ] Increase only the text size (browser text-only zoom or the OS text size setting). Expect text to grow with no overlap and nothing cut off.
-- [ ] Turn on the OS reduce-motion setting ("Show animations" off in Windows, "Reduce motion" on in macOS), reload, and trigger a loading state (for example "Generate plan" with the network throttled). Expect a static filled dot instead of a spinning ring, and no other animation.
 
 #### Colour and contrast
 
-- [ ] Turn on a Windows contrast theme (forced colours). Expect text, buttons, inputs, selects, the table borders and the focus ring to stay visible and readable, and the secondary buttons ("Use my location", "Clear saved profile", starter questions) to still look like buttons.
-- [ ] Expect error messages to be understandable without colour: they are text, listed by field name.
-- [ ] Optional: run axe DevTools or the Lighthouse accessibility audit on the page with a plan shown. Expect no serious or critical issues. These tools catch only part of the issues, so a clean result does not replace the steps above.
+- [ ] Turn on a Windows contrast theme (forced colours). Expect text, buttons, inputs, selects, table borders, and the focus ring to stay visible and readable, and secondary buttons ("Use my location", "Clear saved profile", starter questions) to still look like buttons.
+- [ ] Expect error messages to be understandable without colour: they are text, listed by field name with thicker borders.
+- [ ] Optional: run the Lighthouse accessibility audit on the page with a plan shown. Expect no accessibility failures (automated axe-core scans already run in `tests/browser/test_accessibility.py`).
 
 #### Not yet verified in a real browser or with assistive technology
 
-The automated tests in `tests/test_static_frontend.py` read `public/index.html`, `public/app.css` and `public/app.js` as text. They check that the expected attributes, roles, labels and CSS rules are present. They cannot prove:
+Automated browser tests (97 tests in `tests/browser/`) verify DOM rendering, keyboard focus progression, ARIA attributes, responsive layout, and axe-core rules in Chromium via Playwright. However:
 
-- what a screen reader announces, including double announcements and live region timing;
-- the real focus order, and where focus lands after a plan, an error, a starter question or a chat reply;
-- how the page looks at real zoom levels or on a real phone;
-- forced-colours rendering, or the measured contrast of the final colours.
-
-No result of the accessibility steps above is recorded yet, so treat these behaviors as unverified until a reviewer has run them. `PLAN.md` and `TASKS.md` propose browser tests as Phase 6, but whether to add them is still an open decision.
+- The GitHub Actions CI workflow (`.github/workflows/ci.yml`) defines the `browser` job, but it has not yet run on GitHub, so CI execution on Ubuntu runners remains unverified.
+- Assistive technology speech output (screen reader live announcements, rotor navigation, and double-announcement evaluation) cannot be automated and requires human testing.
+- Real browser zoom (200% and 400%), text-only scaling, and Windows forced colours require manual inspection.
+- Other browser engines (Firefox, Safari) and physical mobile devices have not been tested.
 
 ## Known limits
 
