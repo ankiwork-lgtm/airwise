@@ -188,3 +188,23 @@ All changes are in `public/index.html`, or in `public/app.css` and `public/app.j
 - [x] **T7.3 Split `tests/test_static_frontend.py` by theme** (Pure refactor of test code, no application, `public/`, browser test, CI or lock file change. The 59 tests moved unchanged into 7 modules: `tests/test_static_security.py` (5), `tests/test_static_forms.py` (10), `tests/test_static_chat_ui.py` (11), `tests/test_static_results.py` (7), `tests/test_static_landmarks.py` (10), `tests/test_static_aria.py` (6) and `tests/test_static_styles.py` (10), each 55 to 237 lines, and `tests/test_static_frontend.py` was removed. Test names and source order are unchanged, with no loss or duplication. The test ASTs are identical to HEAD (27 byte-identical, 32 differing only by the `_js_function` and `_declarations` helpers becoming `js_function` and `declarations` in `tests/frontend.py`, the two helpers used across modules). Single-module helpers stay private. Mutation check: removing `scope="col"` from `app.js` and whitening the skip-link background in `app.css` each failed the relocated tests, then both files were restored. Totals unchanged: 435 tests, 338 fast, 97 browser, coverage 97.47%. README Automated coverage list updated.)
   - Split it into smaller modules (for example structure and landmarks, focus and contrast, forms and errors, chat, table), sharing helpers through `tests/frontend.py`.
   - Keep every test and its name, change no assertion, and keep the total test count identical.
+
+## Phase 8: Code Quality & 100% Coverage Elevation
+
+- [x] **T8.1 Route Modularization & Exception Handling**
+  - Extract route declarations from `airwise/main.py` into dedicated modules (`airwise/routes/aqi.py`, `plan.py`, `chat.py`, `health.py`, `limits.py`).
+  - Extract centralized exception handlers and JSON error envelope into `airwise/handlers.py`.
+  - Retain dependency injection hooks (`get_http_client`, `get_llm_client`, `get_deadline`) in `airwise/main.py` to preserve test override compatibility.
+- [x] **T8.2 Domain Modeling & Schema Documentation**
+  - Replace raw tuple `_PM` with typed `PMReading(NamedTuple)` in `airwise/services/aqi.py`.
+  - Add explicit `description` strings to all public fields across Pydantic models in `airwise/models.py` for comprehensive OpenAPI self-documentation.
+- [x] **T8.3 Fallback Observability without Secret Leakage**
+  - Log error class names using structured logging when LLM plan generation falls back to deterministic rules.
+  - Verify through automated tests that raw prompt, error message, or secret tokens are never logged.
+- [x] **T8.4 Frontend Accessibility Enhancements**
+  - Add `role="group"` and descriptive `aria-label` to particulate matter tiles in `public/app.js`.
+  - Add high-contrast styling (`#0b3d91`, underline) for source attribution links in `public/app.css`.
+- [x] **T8.5 100% Full Statement and Branch Coverage**
+  - Add `tests/test_coverage_edge_cases.py` to exercise remaining edge branches in config, middleware, services, and route handlers.
+  - Achieve 100.00% branch and statement test coverage across all source files in `airwise/` (357 fast tests, 97 browser tests, 454 total).
+

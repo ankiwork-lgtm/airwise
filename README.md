@@ -58,7 +58,8 @@ airwise/
   services/        air quality lookup, impact rules, fallback plan, LLM client, plan and chat logic
 public/            index.html, app.css and app.js (served as is)
 tests/             unit, property, static frontend and browser tests
-docs/              planning notes (PLAN.md, TASKS.md)
+PLAN.md            master improvement and architecture plan
+TASKS.md           task breakdown and status checklist
 ```
 
 Route modules register their routes directly on the app (not with `include_router`), so the app keeps `airwise.main.lifespan` as its lifespan. The dependency functions (`get_http_client`, `get_llm_client`, `get_deadline`) stay in `airwise/main.py` so tests can override them with `app.dependency_overrides`.
@@ -96,7 +97,7 @@ From the repository root, with the virtual environment active:
 pytest
 ```
 
-This runs all 435 tests: 338 fast tests and 97 browser tests. The tests mock the Open-Meteo and Anthropic APIs, make no external network calls, and need no Anthropic key. To run only the fast tests:
+This runs all 454 tests: 357 fast tests and 97 browser tests. The tests mock the Open-Meteo and Anthropic APIs, make no external network calls, and need no Anthropic key. To run only the fast tests:
 
 ```
 pytest -m "not browser"
@@ -108,7 +109,7 @@ pytest -m "not browser"
 pytest -m "not browser" --cov=airwise --cov-report=term-missing
 ```
 
-Current result: 97.47% total, with branch coverage. The enforced minimum is 96% (`fail_under` in `pyproject.toml`); it applies only when coverage is measured, so plain `pytest` is unaffected.
+Current result: 100.00% total, with branch coverage (0 missed lines, 0 missed branches across all source modules). The enforced minimum is 96% (`fail_under` in `pyproject.toml`); it applies only when coverage is measured, so plain `pytest` is unaffected.
 
 ### Browser tests
 

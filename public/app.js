@@ -618,13 +618,16 @@
    */
   function pmTile(label, value) {
     var tile = el("div", null, "pm-tile");
+    tile.setAttribute("role", "group");
     tile.appendChild(el("div", label, "pm-label"));
     var num = el("div", null, "pm-value");
     if (value === null || value === undefined) {
       num.appendChild(el("span", "not available", "pm-na"));
+      tile.setAttribute("aria-label", label + ": not available");
     } else {
       num.appendChild(el("span", pct(value)));
       num.appendChild(el("span", " \u00b5g/m\u00b3", "pm-unit"));
+      tile.setAttribute("aria-label", label + ": " + pct(value) + " micrograms per cubic metre");
     }
     tile.appendChild(num);
     return tile;
@@ -669,10 +672,11 @@
     if (reading.source === "live" && typeof reading.source_url === "string" && reading.source_url.indexOf("https:") === 0) {
       var src = el("p", null, "aqi-source muted");
       src.appendChild(el("span", "Source: "));
-      var link = el("a", reading.source_url);
+      var link = el("a", "Open-Meteo Air Quality API (opens in new tab)");
       link.setAttribute("href", reading.source_url);
       link.setAttribute("target", "_blank");
       link.setAttribute("rel", "noopener noreferrer");
+      link.setAttribute("aria-label", "Open-Meteo Air Quality API documentation (opens in new tab)");
       src.appendChild(link);
       card.appendChild(src);
     }
