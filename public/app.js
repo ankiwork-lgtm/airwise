@@ -1,11 +1,68 @@
 (function () {
   "use strict";
 
+  /**
+   * @typedef {Object} Profile Household details sent to the API.
+   * @property {string} city
+   * @property {boolean} kids
+   * @property {boolean} elderly
+   * @property {boolean} respiratory
+   * @property {string} commute
+   * @property {string} cooking_fuel
+   * @property {string} heating
+   * @property {boolean} has_purifier
+   * @property {string} ventilation
+   *
+   * @typedef {Object} Coords Device position.
+   * @property {number} latitude
+   * @property {number} longitude
+   *
+   * @typedef {Object} Reading Air quality reading returned by the API.
+   * @property {string} location_name
+   * @property {number} aqi
+   * @property {string} band CPCB band name.
+   * @property {string} grap_stage
+   * @property {?number} pm2_5
+   * @property {?number} pm10
+   * @property {string} source Either "live" or "estimated".
+   * @property {?string} source_url
+   * @property {?string} observed_at UTC ISO 8601 time.
+   *
+   * @typedef {Object} PlanItem One recommendation.
+   * @property {string} text
+   * @property {string} why_it_matters
+   *
+   * @typedef {Object} ImpactRow One row of the impact table (figures are approximate).
+   * @property {string} action
+   * @property {number} exposure_reduction_pct
+   * @property {number} co2_kg_per_day
+   * @property {string} basis
+   * @property {string} source_note
+   *
+   * @typedef {Object} Plan Plan returned by the API.
+   * @property {Object<string, PlanItem[]>} routine Items per part of the day.
+   * @property {PlanItem[]} indoor_hacks
+   * @property {PlanItem[]} swaps
+   * @property {string} vulnerable_note
+   * @property {ImpactRow[]} impact_table
+   * @property {number} exposure_score
+   * @property {boolean} fallback
+   * @property {boolean} estimated
+   *
+   * @typedef {Object} ErrorDetail User-facing description of a failed request.
+   * @property {string} message
+   * @property {string[]} list
+   * @property {string} [code]
+   * @property {string[]} [fields]
+   */
+
   var STORAGE_KEY = "airwise.profile";
   var GEO_TIMEOUT_MS = 10000;
   var FALLBACK_CITY = "My location";
   var STATUS_ID = "status";
   var CHAT_STATUS_ID = "chat-status";
+  var MAX_CITY_LENGTH = 100;
+  var PCT_ROUNDING = 10;  // one decimal place
 
   var YES_NO = [["yes", "Yes"], ["no", "No"]];
   var FIELDS = [
@@ -36,6 +93,13 @@
   var state = { coords: null, plan: null, reading: null, profile: null };
 
   // The only element factory in this page. Text is always set via textContent.
+  /**
+   * Create an element. Text is set through textContent only, so it is never parsed as markup.
+   * @param {string} tag Element name.
+   * @param {?(string|number)} [text] Text content.
+   * @param {string} [cls] Class name.
+   * @returns {HTMLElement}
+   */
   function el(tag, text, cls) {
     var node = document.createElement(tag);
     if (text !== undefined && text !== null) { node.textContent = String(text); }
@@ -43,10 +107,22 @@
     return node;
   }
 
+  /**
+   * Look up an element by id.
+   * @param {string} id
+   * @returns {HTMLElement}
+   */
   function byId(id) { return document.getElementById(id); }
+  /**
+   * Remove every child of a node.
+   * @param {Node} node
+   */
   function clearNode(node) { while (node.firstChild) { node.removeChild(node.firstChild); } }
 
   // ---------- Form construction ----------
+  /**
+   * Fill the form container with one labelled select per entry in FIELDS.
+   */
   function buildForm() {
     var host = byId("fields");
     FIELDS.forEach(function (f) {
@@ -71,6 +147,10 @@
     });
   }
 
+  /**
+   * Read the form into a profile object. Unanswered yes/no fields become null.
+   * @returns {Profile}
+   */
   function readProfile() {
     var p = { city: byId("city").value.trim() };
     FIELDS.forEach(function (f) {
@@ -81,6 +161,10 @@
     return p;
   }
 
+  /**
+   * Write a profile into the form controls.
+   * @param {Profile} p
+   */
   function fillForm(p) {
     byId("city").value = p.city;
     FIELDS.forEach(function (f) {
@@ -89,19 +173,27 @@
     });
   }
 
+  /**
+   * Empty the city input and reset every select.
+   */
   function resetForm() {
     byId("city").value = "";
     FIELDS.forEach(function (f) { byId("f-" + f.name).value = ""; });
   }
 
   // ---------- Validation (mirrors the server rules) ----------
+  /**
+   * Check a value against the same rules the server applies to a profile.
+   * @param {*} p Candidate value, for example read back from browser storage.
+   * @returns {boolean}
+   */
   function isValidProfile(p) {
     if (!p || typeof p !== "object" || Array.isArray(p)) { return false; }
     var keys = Object.keys(p);
     if (keys.length !== FIELDS.length + 1) { return false; }
     if (typeof p.city !== "string") { return false; }
     var city = p.city.trim();
-    if (city.length < 1 || city.length > 100) { return false; }
+    if (city.length < 1 || city.length > MAX_CITY_LENGTH) { return false; }
     return FIELDS.every(function (f) {
       if (!Object.prototype.hasOwnProperty.call(p, f.name)) { return false; }
       var v = p[f.name];
@@ -111,10 +203,15 @@
   }
 
   // Returns [{ id, label }] for each invalid control, in form order.
+  /**
+   * List the invalid controls of a profile, in form order.
+   * @param {Profile} p
+   * @returns {Array<{id: string, label: string}>}
+   */
   function invalidFields(p) {
     var bad = [];
     var city = typeof p.city === "string" ? p.city.trim() : "";
-    if (city.length < 1 || city.length > 100) { bad.push({ id: "city", label: "City" }); }
+    if (city.length < 1 || city.length > MAX_CITY_LENGTH) { bad.push({ id: "city", label: "City" }); }
     FIELDS.forEach(function (f) {
       var v = p[f.name];
       var ok = f.type === "bool" ? typeof v === "boolean"
@@ -124,16 +221,30 @@
     return bad;
   }
 
+  /**
+   * Visible labels of the invalid controls of a profile.
+   * @param {Profile} p
+   * @returns {string[]}
+   */
   function invalidFieldLabels(p) {
     return invalidFields(p).map(function (x) { return x.label; });
   }
 
   // ---------- Invalid field marking (aria-invalid + aria-describedby) ----------
+  /**
+   * Ids of every form control, in form order.
+   * @returns {string[]}
+   */
   function controlIds() {
     return ["city"].concat(FIELDS.map(function (f) { return "f-" + f.name; }));
   }
 
   // Maps an API field name such as "profile.kids" to a control id, or null.
+  /**
+   * Map an API field name such as "profile.kids" to a control id.
+   * @param {string} name
+   * @returns {?string} The control id, or null when the name has no control.
+   */
   function controlIdForApiField(name) {
     var key = String(name).split(".").pop();
     if (key === "city") { return "city"; }
@@ -141,10 +252,21 @@
     return found ? "f-" + key : null;
   }
 
+  /**
+   * Split a space-separated attribute value into its tokens.
+   * @param {Element} node
+   * @param {string} attr
+   * @returns {string[]}
+   */
   function tokens(node, attr) {
     return (node.getAttribute(attr) || "").split(/\s+/).filter(function (t) { return t !== ""; });
   }
 
+  /**
+   * Flag a control as invalid and point aria-describedby at the status node.
+   * @param {Element} control
+   * @param {string} statusId
+   */
   function markInvalid(control, statusId) {
     control.setAttribute("aria-invalid", "true");
     var cur = tokens(control, "aria-describedby");
@@ -152,6 +274,11 @@
     control.setAttribute("aria-describedby", cur.join(" "));
   }
 
+  /**
+   * Undo markInvalid for a control.
+   * @param {Element} control
+   * @param {string} statusId
+   */
   function unmarkInvalid(control, statusId) {
     control.removeAttribute("aria-invalid");
     var rest = tokens(control, "aria-describedby").filter(function (t) { return t !== statusId; });
@@ -159,6 +286,9 @@
     else { control.removeAttribute("aria-describedby"); }
   }
 
+  /**
+   * Remove the invalid mark from every form control.
+   */
   function clearInvalidFields() {
     controlIds().forEach(function (id) {
       var control = byId(id);
@@ -168,6 +298,11 @@
 
   // Marks the controls with these ids (unknown ids are skipped) and returns the
   // first one in form order, or null.
+  /**
+   * Mark the controls with these ids; unknown ids are skipped.
+   * @param {string[]} ids
+   * @returns {?HTMLElement} The first marked control in form order, or null.
+   */
   function markInvalidIds(ids) {
     var first = null;
     controlIds().forEach(function (id) {
@@ -180,6 +315,11 @@
   }
 
   // Marks controls named by the API (unmappable names are skipped silently).
+  /**
+   * Mark the controls named by the API; names that map to no control are skipped.
+   * @param {string[]} names
+   * @returns {?HTMLElement} The first marked control, or null.
+   */
   function markApiFields(names) {
     var ids = [];
     names.forEach(function (n) {
@@ -189,25 +329,44 @@
     return markInvalidIds(ids);
   }
 
+  /**
+   * Move focus to a control, if there is one.
+   * @param {?HTMLElement} control
+   */
   function focusControl(control) {
     if (control) { control.focus(); }
   }
 
   // Drops the invalid mark from a control once its value is acceptable again.
+  /**
+   * Drop the invalid mark from a control once its value is acceptable again.
+   * @param {string} id
+   */
   function revalidateControl(id) {
     var stillBad = invalidFields(readProfile()).some(function (x) { return x.id === id; });
     if (!stillBad) { unmarkInvalid(byId(id), STATUS_ID); }
   }
 
   // ---------- localStorage (every access guarded) ----------
+  /**
+   * Store the profile in browser storage; storage errors are ignored.
+   * @param {Profile} p
+   */
   function saveProfile(p) {
     try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(p)); } catch (e) { /* not blocking */ }
   }
 
+  /**
+   * Delete the stored profile; storage errors are ignored.
+   */
   function removeSaved() {
     try { window.localStorage.removeItem(STORAGE_KEY); } catch (e) { /* ignore */ }
   }
 
+  /**
+   * Read the stored profile, discarding it when it is missing or invalid.
+   * @returns {?Profile}
+   */
   function loadSaved() {
     var raw = null;
     try { raw = window.localStorage.getItem(STORAGE_KEY); } catch (e) { return null; }
@@ -222,6 +381,14 @@
   // The node is reused (never re-created) so the live region stays reliable.
   // Errors become role="alert"/assertive; everything else role="status"/polite.
   // The role is applied before the text so the new text is what gets announced.
+  /**
+   * Show a message in a live region.
+   * The node is reused so the region stays reliable. Errors use role alert (assertive);
+   * everything else uses role status (polite).
+   * @param {HTMLElement} node
+   * @param {string} message
+   * @param {{error?: boolean, loading?: boolean, list?: string[]}} [opts]
+   */
   function setStatus(node, message, opts) {
     opts = opts || {};
     node.setAttribute("role", opts.error ? "alert" : "status");
@@ -239,6 +406,13 @@
   }
 
   // ---------- API ----------
+  /**
+   * Turn an API error response into a user-facing message and details.
+   * @param {number} status HTTP status.
+   * @param {?Object} body Parsed JSON body, if any.
+   * @param {?string} retryAfter Value of the Retry-After header.
+   * @returns {ErrorDetail}
+   */
   function describeError(status, body, retryAfter) {
     var err = body && body.error ? body.error : {};
     var code = err.code || (status === 429 ? "rate_limited" : (status === 413 ? "payload_too_large" : "server_error"));
@@ -256,6 +430,13 @@
     return { message: message, list: list, code: code, fields: Array.isArray(err.fields) ? err.fields : [] };
   }
 
+  /**
+   * Send a same-origin API request and parse the JSON reply.
+   * Rejects with an Error whose detail property holds an ErrorDetail.
+   * @param {string} path Path that starts with /api/.
+   * @param {Object} options Options passed to the network call.
+   * @returns {Promise<*>}
+   */
   function callApi(path, options) {
     return fetch(path, options).then(function (res) {
       return res.json().catch(function () { return null; }).then(function (body) {
@@ -274,6 +455,12 @@
     });
   }
 
+  /**
+   * Request a plan for a profile, optionally using device coordinates.
+   * @param {Profile} profile
+   * @param {?Coords} coords
+   * @returns {Promise<{plan: Plan, reading: Reading}>}
+   */
   function postPlan(profile, coords) {
     var payload = { profile: profile };
     if (coords) { payload.latitude = coords.latitude; payload.longitude = coords.longitude; }
@@ -284,11 +471,20 @@
     });
   }
 
+  /**
+   * Dispatch a custom event on the document.
+   * @param {string} name
+   * @param {*} detail
+   */
   function publish(name, detail) {
     document.dispatchEvent(new CustomEvent(name, { detail: detail }));
   }
 
   // ---------- Generate ----------
+  /**
+   * Handle the profile form submit: validate, request a plan and publish the result.
+   * @param {Event} ev
+   */
   function onGenerate(ev) {
     ev.preventDefault();
     var status = byId("status");
@@ -319,6 +515,9 @@
     }).then(function () { btn.disabled = false; });
   }
 
+  /**
+   * Handle the clear button: forget the saved profile and reset the form.
+   */
   function onClear() {
     removeSaved();
     resetForm();
@@ -328,6 +527,9 @@
   }
 
   // ---------- Geolocation ----------
+  /**
+   * Handle the location button: get device coordinates and look up the air reading.
+   */
   function onUseLocation() {
     var btn = byId("geo-btn");
     var status = byId("geo-status");
@@ -381,7 +583,12 @@
   var NO_ACTIONS = "No further actions apply.";
   var SLOTS = [["morning", "Morning"], ["commute", "Commute"], ["midday", "Midday"], ["evening", "Evening"]];
 
-  function pct(n) { return String(Math.round(Number(n) * 10) / 10); }
+  /**
+   * Format a number with at most one decimal place.
+   * @param {number} n
+   * @returns {string}
+   */
+  function pct(n) { return String(Math.round(Number(n) * PCT_ROUNDING) / PCT_ROUNDING); }
 
   var BAND_CLASS = {
     "Good": "band-good", "Satisfactory": "band-satisfactory", "Moderate": "band-moderate",
@@ -389,6 +596,11 @@
   };
 
   // Renders the observation time (UTC ISO from the API) in the viewer's local time zone.
+  /**
+   * Render the observation time (UTC ISO from the API) in the viewer's time zone.
+   * @param {string} iso
+   * @returns {?string} Null when the value is not a valid date.
+   */
   function formatObserved(iso) {
     var d = new Date(iso);
     if (isNaN(d.getTime())) { return null; }
@@ -398,6 +610,12 @@
     });
   }
 
+  /**
+   * Build a tile showing one particulate matter value.
+   * @param {string} label
+   * @param {?number} value Concentration in micrograms per cubic metre, or null when unavailable.
+   * @returns {HTMLElement}
+   */
   function pmTile(label, value) {
     var tile = el("div", null, "pm-tile");
     tile.appendChild(el("div", label, "pm-label"));
@@ -412,6 +630,11 @@
     return tile;
   }
 
+  /**
+   * Build the air quality card for a reading.
+   * @param {Reading} reading
+   * @returns {HTMLElement}
+   */
   function renderAqiCard(reading) {
     var card = el("div", null, "card aqi " + (BAND_CLASS[reading.band] || ""));
     card.appendChild(el("h2", "Air quality in " + reading.location_name));
@@ -456,6 +679,11 @@
     return card;
   }
 
+  /**
+   * Build a list entry for one plan item.
+   * @param {PlanItem} item
+   * @returns {HTMLElement}
+   */
   function renderItem(item) {
     var li = el("li");
     li.appendChild(el("div", item.text, "item-text"));
@@ -463,6 +691,12 @@
     return li;
   }
 
+  /**
+   * Build a titled list of plan items.
+   * @param {string} title
+   * @param {PlanItem[]} items
+   * @returns {HTMLElement}
+   */
   function renderItemList(title, items) {
     var box = el("div", null, "block");
     box.appendChild(el("h3", title));
@@ -472,6 +706,11 @@
     return box;
   }
 
+  /**
+   * Build the impact table block.
+   * @param {ImpactRow[]} rows
+   * @returns {HTMLElement}
+   */
   function renderImpact(rows) {
     var box = el("div", null, "block");
     var heading = el("h3", "Impact table");
@@ -514,6 +753,12 @@
     return box;
   }
 
+  /**
+   * Render the reading and plan into the result area.
+   * Only a rendered plan takes focus. A reading-only render never moves focus.
+   * @param {?Reading} reading
+   * @param {?Plan} plan
+   */
   function renderResult(reading, plan) {
     var host = byId("result-body");
     clearNode(host);
@@ -580,6 +825,12 @@
   var chatBusy = false;
   var chatGeneration = 0;
 
+  /**
+   * Append a chat message to the history list.
+   * @param {"user"|"assistant"} role
+   * @param {string} text
+   * @param {boolean} failed Whether the message reports a failure.
+   */
   function addBubble(role, text, failed) {
     var list = byId("chat-history");
     var li = el("li", text, "bubble " + role + (failed ? " failed" : ""));
@@ -591,6 +842,10 @@
     list.scrollTop = list.scrollHeight;
   }
 
+  /**
+   * Send a chat message with the current plan as context and show the reply.
+   * @param {string} message
+   */
   function sendChat(message) {
     message = String(message).trim();
     if (chatBusy || !state.plan || message === "" || message.length > MAX_MESSAGE) { return; }
@@ -647,6 +902,9 @@
     });
   }
 
+  /**
+   * Create the starter buttons and wire up the chat form.
+   */
   function buildChat() {
     var host = byId("starters");
     STARTERS.forEach(function (q) {
@@ -686,6 +944,9 @@
   });
 
   // ---------- Init ----------
+  /**
+   * Build the form and chat, restore the saved profile and attach the event listeners.
+   */
   function init() {
     buildForm();
     buildChat();

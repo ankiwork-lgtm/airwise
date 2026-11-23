@@ -92,10 +92,12 @@ def _payload(req: ChatRequest) -> dict[str, Any]:
 
 
 def _failure() -> ChatReply:
+    """Reply used when the chat cannot be answered."""
     return ChatReply(reply=CHAT_FAILURE_MESSAGE, failed=True)
 
 
 async def answer(req: ChatRequest, *, llm: LLMClient, deadline: Deadline) -> ChatReply:
+    """Answer a chat message: decline out-of-scope questions, otherwise ask the LLM."""
     if out_of_scope(req.message) is not None:
         return ChatReply(reply=SCOPE_DECLINE_REPLY, failed=False)
     if not anthropic_api_key() or deadline.should_skip_llm():

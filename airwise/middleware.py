@@ -67,6 +67,7 @@ def client_ip(request: Request) -> str:
 
 
 async def _send_413(send: Send) -> None:
+    """Send the 413 JSON error response."""
     payload = json.dumps(
         {
             "error": {
@@ -100,10 +101,12 @@ class BodySizeLimitMiddleware:
     """
 
     def __init__(self, app: ASGIApp, max_bytes: int = MAX_BODY_BYTES) -> None:
+        """Wrap ``app`` and reject bodies larger than ``max_bytes``."""
         self.app = app
         self.max_bytes = max_bytes
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Handle one ASGI call, answering 413 when the body is too large."""
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
@@ -156,9 +159,11 @@ class SecurityHeadersMiddleware:
     """Set SECURITY_HEADERS on every HTTP response, replacing same-named headers."""
 
     def __init__(self, app: ASGIApp) -> None:
+        """Wrap ``app``."""
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Handle one ASGI call, adding the security headers to the response."""
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return

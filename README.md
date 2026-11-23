@@ -43,6 +43,39 @@ Contents: [Feature set](#feature-set) | [Local setup](#local-setup) | [Environme
    Do not bind it to `0.0.0.0`; see "Known limits" for the rate-limit reason.
 6. Open http://127.0.0.1:8000 in a browser. `http://127.0.0.1:8000/api/health` returns `{"status":"ok"}`.
 
+## Project layout
+
+```
+airwise/
+  main.py          app factory, shared HTTP client lifecycle, index and asset routes
+  handlers.py      exception handlers and the JSON error envelope
+  middleware.py    body size limit, security headers, CSP, client IP
+  config.py        constants, environment readers, request deadline
+  models.py        Pydantic request, response and LLM schemas
+  errors.py        application error hierarchy
+  ratelimit.py     fixed-window rate limiter
+  routes/          one module per API route (health, aqi, plan, chat) plus the rate limit check
+  services/        air quality lookup, impact rules, fallback plan, LLM client, plan and chat logic
+public/            index.html, app.css and app.js (served as is)
+tests/             unit, property, static frontend and browser tests
+docs/              planning notes (PLAN.md, TASKS.md)
+```
+
+Route modules register their routes directly on the app (not with `include_router`), so the app keeps `airwise.main.lifespan` as its lifespan. The dependency functions (`get_http_client`, `get_llm_client`, `get_deadline`) stay in `airwise/main.py` so tests can override them with `app.dependency_overrides`.
+
+## Code quality checks
+
+Run these before committing (CI runs the same commands):
+
+```
+ruff check .
+ruff format --check .
+mypy
+pytest -m "not browser" --cov
+```
+
+`ruff` enforces pycodestyle, pyflakes, isort, bugbear, pyupgrade, simplify, comprehensions, return, pathlib, naming, pylint, bandit and docstring (Google style) rules; `mypy` runs in strict mode on `airwise/`. Per-file exceptions for tests are listed in `pyproject.toml`. `public/app.js` documents its types with JSDoc.
+
 ## Environment variables
 
 These are all the variables defined in `.env.example` and read in `airwise/config.py`. An empty or whitespace-only value counts as unset.
@@ -152,10 +185,10 @@ Implemented controls, with where they live:
 
 - Input validation: Pydantic models reject unknown fields and enforce types, ranges and length limits (`airwise/models.py`); `/api/aqi` checks `lat` and `lon` ranges.
 - Request size: bodies over 64 KB get a 413 before the route runs (`BodySizeLimitMiddleware` in `airwise/middleware.py`).
-- Rate limits: per client IP and endpoint, fixed window of 60 seconds: 10 plan, 30 chat and 30 AQI requests, then 429 with `Retry-After` (`airwise/ratelimit.py`, `airwise/main.py`). The client IP comes from `X-Forwarded-For`; see "Known limits" for the trust condition.
+- Rate limits: per client IP and endpoint, fixed window of 60 seconds: 10 plan, 30 chat and 30 AQI requests, then 429 with `Retry-After` (`airwise/ratelimit.py`, `airwise/routes/limits.py`). The client IP comes from `X-Forwarded-For`; see "Known limits" for the trust condition.
 - Security headers and CSP: `SECURITY_HEADERS` (nosniff, no-referrer, frame denial, Permissions-Policy, same-origin opener policy, CSP) are set on every response, including errors, and mirrored in `vercel.json` for static files.
 - Frontend: no HTML injection sinks (`innerHTML` and similar) and no network calls except same-origin `/api/*` (`tests/test_static_security.py`, `tests/test_csp.py`).
-- Error handling: errors use one envelope (`code`, `message`, `fields`); validation errors list field names only, never submitted values; unexpected errors return a generic 500 with no stack trace (`airwise/main.py`).
+- Error handling: errors use one envelope (`code`, `message`, `fields`); validation errors list field names only, never submitted values; unexpected errors return a generic 500 with no stack trace (`airwise/handlers.py`).
 - Logging: logs carry exception class names and status codes only, never messages, request bodies, keys or upstream response text (`tests/test_error_hygiene.py`).
 - Secrets: the key is read only from the environment or the git-ignored `.env` (`airwise/config.py`); no secret is in code or CI.
 - LLM output: validated against a schema, impact figures are copied from the server-side table, and unknown table ids are dropped (`airwise/services/plan.py`). Strings from the caller are passed to the model as data inside a JSON object, with prompt rules not to follow them as instructions.

@@ -25,7 +25,7 @@ _shared: (
 
 def _get_client() -> httpx.AsyncClient:
     """Return the shared client, creating it lazily. Must be called inside a running loop."""
-    global _shared
+    global _shared  # noqa: PLW0603 - module-level cache, patched by tests
     loop = asyncio.get_running_loop()
     if _shared is not None:
         old_loop, old_transport, client = _shared
@@ -41,7 +41,7 @@ def _get_client() -> httpx.AsyncClient:
 
 async def aclose_llm_client() -> None:
     """Close and forget the shared client, if any. Safe to call repeatedly."""
-    global _shared
+    global _shared  # noqa: PLW0603 - module-level cache, patched by tests
     shared, _shared = _shared, None
     if shared is not None and shared[0] is asyncio.get_running_loop():
         await shared[2].aclose()
@@ -51,22 +51,28 @@ class LLMUnavailable(Exception):
     """Missing key, SDK error, timeout, or unparsable JSON. Never carries the key."""
 
     def __init__(self, message: str, status_code: int | None = None) -> None:
+        """Store the safe message and the upstream HTTP status, if any."""
         super().__init__(message)
         self.status_code = status_code
 
 
 class LLMClient(Protocol):
+    """Anything that can return a JSON object matching a schema."""
+
     async def complete_json(
-        self, *, system: str, user: str, schema_name: str, schema: dict, timeout_s: float
-    ) -> dict: ...
+        self, *, system: str, user: str, schema_name: str, schema: dict[str, Any], timeout_s: float
+    ) -> dict[str, Any]:
+        """Return the model's JSON answer, or raise ``LLMUnavailable``."""
+        ...
 
 
 class AnthropicClient:
     """One Messages API call with a forced tool for structured JSON output, no retries."""
 
     async def complete_json(
-        self, *, system: str, user: str, schema_name: str, schema: dict, timeout_s: float
-    ) -> dict:
+        self, *, system: str, user: str, schema_name: str, schema: dict[str, Any], timeout_s: float
+    ) -> dict[str, Any]:
+        """Call the Messages API with a forced tool and return the tool input."""
         key = anthropic_api_key()
         if not key:
             raise LLMUnavailable("LLM is not configured.")
@@ -182,6 +188,7 @@ PLAN_INSTRUCTIONS = (
 
 
 def build_system_prompt() -> str:
+    """Return the fixed system prompt."""
     return SYSTEM_PROMPT
 
 

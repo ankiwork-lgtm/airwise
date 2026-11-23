@@ -14,7 +14,10 @@ from airwise.models import (
     PlanItem,
     Routine,
 )
-from airwise.services.impact import ImpactResult
+from airwise.services.impact import POOR_AQI_MIN, ImpactResult
+
+_TEXT_MAX = 300
+_NOTE_MAX = 500
 
 _INDOOR_IDS = ("purifier_or_diy", "close_windows_peak", "wet_cleaning")
 _SWAP_IDS = (
@@ -82,9 +85,10 @@ def _item(
     row: ImpactRow | None = None,
     context_factor: ContextFactor | None = None,
 ) -> PlanItem:
+    """Build a PlanItem, trimming text to the model limits."""
     return PlanItem(
-        text=text[:300],
-        why_it_matters=(why or "Helps reduce your exposure to polluted air.")[:300],
+        text=text[:_TEXT_MAX],
+        why_it_matters=(why or "Helps reduce your exposure to polluted air.")[:_TEXT_MAX],
         impact_id=row.id if row else None,
         context_factor=context_factor,
         impact=row.figures() if row else None,
@@ -92,6 +96,7 @@ def _item(
 
 
 def build_vulnerable_note(profile: HouseholdProfile) -> str:
+    """Return a note naming each vulnerable group in the household (or a neutral sentence)."""
     groups = []
     if profile.kids:
         groups.append("kids")
@@ -110,10 +115,11 @@ def build_vulnerable_note(profile: HouseholdProfile) -> str:
         "use a purifier in their room, and consult a doctor if symptoms such as "
         "coughing, wheezing, or breathlessness appear."
     )
-    return note[:500]
+    return note[:_NOTE_MAX]
 
 
 def context_factors(profile: HouseholdProfile, reading: AirReading) -> list[ContextFactor]:
+    """List the local pollution factors relevant to this household and reading."""
     factors: list[ContextFactor] = []
     if profile.cooking_fuel == "biomass" or profile.heating == "biomass_burning":
         factors.append("biomass_cooking_heating")
@@ -121,7 +127,7 @@ def context_factors(profile: HouseholdProfile, reading: AirReading) -> list[Cont
         factors.append("two_wheelers")
     if profile.commute == "bus_metro":
         factors.append("metro_use")
-    if reading.aqi >= 201:
+    if reading.aqi >= POOR_AQI_MIN:
         factors.append("stubble_burning")
         factors.append("firecrackers")
     return factors
@@ -153,83 +159,71 @@ FACTOR_ITEM: dict[ContextFactor, tuple[str, str]] = {
 }
 
 
+_INDOOR_DEFAULT = (
+    "Keep indoor air clean: avoid smoke, incense, and dry sweeping.",
+    "Indoor sources add to pollution you breathe even when outdoor air is fine.",
+)
+_SWAP_DEFAULT = (
+    "Walk, cycle, or use public transport for short trips when you can.",
+    "Fewer fuel-burning trips cut both local pollution and CO2 emissions.",
+)
+_MAX_LIST_ITEMS = 5
+
+
+def _rows_to_items(
+    rows: dict[str, ImpactRow], ids: tuple[str, ...], default: tuple[str, str]
+) -> list[PlanItem]:
+    """Items for the impact rows named in ``ids``, or one default item when none apply."""
+    items = [_item(row.action, row.basis, row) for rid in ids if (row := rows.get(rid))]
+    return items or [_item(*default)]
+
+
+def _commute_item(
+    profile: HouseholdProfile, rows: dict[str, ImpactRow], factors: list[ContextFactor]
+) -> PlanItem:
+    """The commute item, tied to the N95 row unless the household works from home."""
+    row = rows.get("n95_mask") if profile.commute != "work_from_home" else None
+    tag = next((c for c in ("two_wheelers", "metro_use") if c in factors), None)
+    return _item(_COMMUTE_TEXT[profile.commute], _COMMUTE_WHY[profile.commute], row, tag)
+
+
+def _add_context_items(factors: list[ContextFactor], routine: dict[str, list[PlanItem]]) -> None:
+    """Make sure a relevant local factor is tagged in the routine (modifies ``routine``)."""
+    if not factors:
+        return
+
+    def tagged(factor: ContextFactor) -> bool:
+        return any(i.context_factor == factor for items in routine.values() for i in items)
+
+    if not any(i.context_factor for items in routine.values() for i in items):
+        text, why = FACTOR_ITEM[factors[0]]
+        routine["midday"].append(_item(text, why, None, factors[0]))
+    elif "biomass_cooking_heating" in factors and not tagged("biomass_cooking_heating"):
+        text, why = FACTOR_ITEM["biomass_cooking_heating"]
+        routine["morning"].append(_item(text, why, None, "biomass_cooking_heating"))
+
+
 def build_fallback_plan(
     profile: HouseholdProfile, reading: AirReading, impact: ImpactResult
 ) -> Plan:
+    """Build a deterministic, schema-valid plan from the band texts and the impact rows."""
     rows = {r.id: r for r in impact.rows}
     band = reading.band
     factors = context_factors(profile, reading)
     why_band = _BAND_WHY[band]
 
-    def tag_for(*candidates: ContextFactor) -> ContextFactor | None:
-        for c in candidates:
-            if c in factors:
-                return c
-        return None
-
-    # Routine
-    morning = [_item(_BAND_MORNING[band], why_band)]
-    commute_row = rows.get("n95_mask") if profile.commute != "work_from_home" else None
-    commute_tag = tag_for("two_wheelers", "metro_use")
-    commute = [
-        _item(
-            _COMMUTE_TEXT[profile.commute],
-            _COMMUTE_WHY[profile.commute],
-            commute_row,
-            commute_tag,
-        )
-    ]
-    midday = [_item(_BAND_MIDDAY[band], why_band)]
-    evening = [_item(_BAND_EVENING[band], why_band)]
-
-    # Ensure at least one routine item carries a relevant context tag.
-    routine_lists = {"morning": morning, "commute": commute, "midday": midday, "evening": evening}
-    if factors and not any(i.context_factor for lst in routine_lists.values() for i in lst):
-        f = factors[0]
-        text, why = FACTOR_ITEM[f]
-        midday.append(_item(text, why, None, f))
-    elif factors:
-        # Add a biomass/seasonal tagged item when available to reflect profile/reading.
-        for f in factors:
-            if f in ("biomass_cooking_heating",) and not any(
-                i.context_factor == f for lst in routine_lists.values() for i in lst
-            ):
-                text, why = FACTOR_ITEM[f]
-                morning.append(_item(text, why, None, f))
-                break
-
-    # Indoor hacks
-    indoor: list[PlanItem] = []
-    for rid in _INDOOR_IDS:
-        row = rows.get(rid)
-        if row is not None:
-            indoor.append(_item(row.action, row.basis, row))
-    if not indoor:
-        indoor.append(
-            _item(
-                "Keep indoor air clean: avoid smoke, incense, and dry sweeping.",
-                "Indoor sources add to pollution you breathe even when outdoor air is fine.",
-            )
-        )
-
-    # Swaps
-    swaps: list[PlanItem] = []
-    for rid in _SWAP_IDS:
-        row = rows.get(rid)
-        if row is not None:
-            swaps.append(_item(row.action, row.basis, row))
-    if not swaps:
-        swaps.append(
-            _item(
-                "Walk, cycle, or use public transport for short trips when you can.",
-                "Fewer fuel-burning trips cut both local pollution and CO2 emissions.",
-            )
-        )
+    routine = {
+        "morning": [_item(_BAND_MORNING[band], why_band)],
+        "commute": [_commute_item(profile, rows, factors)],
+        "midday": [_item(_BAND_MIDDAY[band], why_band)],
+        "evening": [_item(_BAND_EVENING[band], why_band)],
+    }
+    _add_context_items(factors, routine)
 
     plan = Plan(
-        routine=Routine(morning=morning, commute=commute, midday=midday, evening=evening),
-        indoor_hacks=indoor[:5],
-        swaps=swaps[:5],
+        routine=Routine(**routine),
+        indoor_hacks=_rows_to_items(rows, _INDOOR_IDS, _INDOOR_DEFAULT)[:_MAX_LIST_ITEMS],
+        swaps=_rows_to_items(rows, _SWAP_IDS, _SWAP_DEFAULT)[:_MAX_LIST_ITEMS],
         vulnerable_note=build_vulnerable_note(profile),
         impact_table=list(impact.rows),
         exposure_score=impact.exposure_score,

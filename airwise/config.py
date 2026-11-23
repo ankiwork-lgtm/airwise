@@ -21,6 +21,9 @@ ESTIMATED_PM25, ESTIMATED_PM10 = 150.0, 260.0  # typical winter values
 LOOKUP_CACHE_TTL_S = 300.0  # geocode and PM lookup cache lifetime (about 5 minutes)
 LOOKUP_CACHE_MAX_ENTRIES = 256  # per cache; oldest entries are evicted first
 
+LLM_TIMEOUT_MARGIN_S = 1.0  # time kept back from the deadline after the LLM call
+MIN_QUOTED_LENGTH = 2  # an opening and a closing quote
+
 DEFAULT_LLM_MODEL = "claude-haiku-5-5"
 DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1"
 
@@ -33,6 +36,7 @@ class Deadline:
         total_s: float = REQUEST_DEADLINE_S,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
+        """Start the budget now; ``clock`` is injectable for tests."""
         self._clock = clock
         self._end = clock() + total_s
 
@@ -41,8 +45,8 @@ class Deadline:
         return max(0.0, self._end - self._clock())
 
     def llm_timeout(self) -> float:
-        """Planned LLM timeout: min(LLM_TIMEOUT_S, remaining - 1), never below 0."""
-        return max(0.0, min(LLM_TIMEOUT_S, self.remaining() - 1.0))
+        """Planned LLM timeout: min(LLM_TIMEOUT_S, remaining - margin), never below 0."""
+        return max(0.0, min(LLM_TIMEOUT_S, self.remaining() - LLM_TIMEOUT_MARGIN_S))
 
     def should_skip_llm(self) -> bool:
         """True when less than LLM_MIN_BUDGET_S remains."""
@@ -60,13 +64,13 @@ def load_env_file() -> None:
     path = ENV_FILE
     if not path.is_file():
         return
-    for line in path.read_text(encoding="utf-8-sig").splitlines():
-        line = line.strip()
+    for raw_line in path.read_text(encoding="utf-8-sig").splitlines():
+        line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
         key, value = key.strip(), value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        if len(value) >= MIN_QUOTED_LENGTH and value[0] == value[-1] and value[0] in "\"'":
             value = value[1:-1]
         if key:
             os.environ[key] = value

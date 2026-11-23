@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import time
 from collections.abc import Callable, Hashable
 from datetime import UTC, datetime
@@ -22,8 +23,33 @@ from airwise.config import (
 from airwise.errors import CityNotFound, InvalidCity, LookupUnavailable
 from airwise.models import AirReading, CPCBBand, GrapStage
 
+# --- Index tables --------------------------------------------------------------------------
+
+MAX_AQI = 500
+MAX_PM = 5000  # readings above this are treated as bad data
+MAX_LATITUDE, MAX_LONGITUDE = 90, 180
+MAX_CITY_LENGTH = 100
+
+# Upper AQI bound of each CPCB band (a higher value is "Severe").
+_BAND_UPPER_BOUNDS: tuple[tuple[int, CPCBBand], ...] = (
+    (50, "Good"),
+    (100, "Satisfactory"),
+    (200, "Moderate"),
+    (300, "Poor"),
+    (400, "Very Poor"),
+)
+# Upper AQI bound of each GRAP stage (a higher value is "Stage IV").
+_GRAP_UPPER_BOUNDS: tuple[tuple[int, GrapStage], ...] = (
+    (200, "none"),
+    (300, "Stage I"),
+    (400, "Stage II"),
+    (450, "Stage III"),
+)
+
 
 class Breakpoint(NamedTuple):
+    """One CPCB breakpoint row: a concentration range and the index range it maps to."""
+
     bp_lo: float
     bp_hi: float
     i_lo: int
@@ -50,14 +76,16 @@ PM10_BREAKPOINTS: list[Breakpoint] = [
 
 
 def sub_index(conc: float, table: list[Breakpoint]) -> float:
-    """Piecewise-linear sub-index. Gap values take the next range's low index;
-    values above the top range give 500."""
+    """Piecewise-linear sub-index.
+
+    Gap values take the next range's low index; values above the top range give 500.
+    """
     for bp in table:
         if conc <= bp.bp_hi:
             if conc <= bp.bp_lo:
                 return float(bp.i_lo)
             return (bp.i_hi - bp.i_lo) / (bp.bp_hi - bp.bp_lo) * (conc - bp.bp_lo) + bp.i_lo
-    return 500.0
+    return float(MAX_AQI)
 
 
 def compute_aqi(pm25: float | None, pm10: float | None) -> int:
@@ -69,36 +97,31 @@ def compute_aqi(pm25: float | None, pm10: float | None) -> int:
         subs.append(sub_index(pm10, PM10_BREAKPOINTS))
     if not subs:
         raise ValueError("at least one of pm25 or pm10 is required")
-    return min(500, round(max(subs)))
+    return min(MAX_AQI, round(max(subs)))
 
 
 def band_for(aqi: int) -> CPCBBand:
-    if aqi <= 50:
-        return "Good"
-    if aqi <= 100:
-        return "Satisfactory"
-    if aqi <= 200:
-        return "Moderate"
-    if aqi <= 300:
-        return "Poor"
-    if aqi <= 400:
-        return "Very Poor"
+    """Return the CPCB band for an AQI value."""
+    for upper, band in _BAND_UPPER_BOUNDS:
+        if aqi <= upper:
+            return band
     return "Severe"
 
 
 def grap_for(aqi: int) -> GrapStage:
-    if aqi <= 200:
-        return "none"
-    if aqi <= 300:
-        return "Stage I"
-    if aqi <= 400:
-        return "Stage II"
-    if aqi <= 450:
-        return "Stage III"
+    """Return the indicative GRAP stage for an AQI value."""
+    for upper, stage in _GRAP_UPPER_BOUNDS:
+        if aqi <= upper:
+            return stage
     return "Stage IV"
 
 
+# --- Caches --------------------------------------------------------------------------------
+
+
 class Place(NamedTuple):
+    """A geocoded location."""
+
     name: str
     latitude: float
     longitude: float
@@ -115,9 +138,11 @@ class _TTLCache[V]:
     """
 
     def __init__(self) -> None:
+        """Create an empty cache."""
         self._items: dict[Hashable, tuple[float, V]] = {}
 
     def get(self, key: Hashable) -> V | None:
+        """Return the live value for ``key``, or None when absent or expired."""
         item = self._items.get(key)
         if item is None or item[0] <= _clock():
             self._items.pop(key, None)
@@ -125,6 +150,7 @@ class _TTLCache[V]:
         return item[1]
 
     def put(self, key: Hashable, value: V) -> None:
+        """Store ``value``, first evicting expired entries and the oldest when full."""
         now = _clock()
         self._items.pop(key, None)  # re-insert at the end
         while self._items:
@@ -136,6 +162,7 @@ class _TTLCache[V]:
         self._items[key] = (now + LOOKUP_CACHE_TTL_S, value)
 
     def clear(self) -> None:
+        """Remove every entry."""
         self._items.clear()
 
 
@@ -150,12 +177,15 @@ def clear_cache() -> None:
     _pm_readings.clear()
 
 
+# --- Upstream value parsing ----------------------------------------------------------------
+
+
 def _num(value: Any) -> float | None:
     """Return a finite, in-range PM value or None."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     v = float(value)
-    if v != v or v < 0 or v > 5000:
+    if math.isnan(v) or v < 0 or v > MAX_PM:
         return None
     return v
 
@@ -163,7 +193,8 @@ def _num(value: Any) -> float | None:
 def _observed_at(value: Any) -> str | None:
     """Normalise the upstream observation time to UTC ISO 8601, or None if unusable.
 
-    Open-Meteo returns GMT times without an offset (e.g. "2025-01-15T09:00")."""
+    Open-Meteo returns GMT times without an offset (e.g. "2025-01-15T09:00").
+    """
     if not isinstance(value, str):
         return None
     try:
@@ -176,19 +207,18 @@ def _observed_at(value: Any) -> str | None:
 
 
 def _build(
-    name: str,
-    lat: float,
-    lon: float,
+    place: Place,
     pm25: float | None,
     pm10: float | None,
     source: Literal["live", "estimated"],
     observed_at: str | None = None,
 ) -> AirReading:
+    """Assemble an AirReading, deriving the AQI, band and GRAP stage from the PM values."""
     aqi = compute_aqi(pm25, pm10)
     return AirReading(
-        location_name=name,
-        latitude=lat,
-        longitude=lon,
+        location_name=place.name,
+        latitude=place.latitude,
+        longitude=place.longitude,
         pm2_5=pm25,
         pm10=pm10,
         aqi=aqi,
@@ -202,14 +232,20 @@ def _build(
 
 def estimated_reading(name: str, lat: float | None, lon: float | None) -> AirReading:
     """Reading built from the configured typical values, flagged as estimated."""
-    return _build(
-        (name or "Unknown")[:100],
+    place = Place(
+        (name or "Unknown")[:MAX_CITY_LENGTH],
         lat if lat is not None else 0.0,
         lon if lon is not None else 0.0,
+    )
+    return _build(
+        place,
         ESTIMATED_PM25,
         ESTIMATED_PM10,
         "estimated",
     )
+
+
+# --- Lookups -------------------------------------------------------------------------------
 
 
 async def geocode(client: httpx.AsyncClient, city: str) -> Place:
@@ -224,6 +260,7 @@ async def geocode(client: httpx.AsyncClient, city: str) -> Place:
 
 
 async def _geocode_upstream(client: httpx.AsyncClient, city: str) -> Place:
+    """Query the geocoding API for ``city`` and validate the top result."""
     params: dict[str, str | int] = {
         "name": city,
         "count": 1,
@@ -244,20 +281,20 @@ async def _geocode_upstream(client: httpx.AsyncClient, city: str) -> Place:
         top = results[0]
         lat = float(top["latitude"])
         lon = float(top["longitude"])
-        name = str(top.get("name") or city)[:100]
+        name = str(top.get("name") or city)[:MAX_CITY_LENGTH]
     except (KeyError, TypeError, ValueError, IndexError) as exc:
         raise LookupUnavailable() from exc
-    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+    if not (-MAX_LATITUDE <= lat <= MAX_LATITUDE and -MAX_LONGITUDE <= lon <= MAX_LONGITUDE):
         raise LookupUnavailable()
     return Place(name, lat, lon)
 
 
 async def fetch_pm(client: httpx.AsyncClient, lat: float, lon: float) -> _PM:
-    """Fetch current PM2.5, PM10 and observation time. Raises httpx.HTTPError or ValueError
-    on failure.
+    """Fetch current PM2.5, PM10 and observation time.
 
-    Results are cached by coordinates rounded to 2 decimals (about 1 km); a result with
-    no usable value is not cached."""
+    Raises httpx.HTTPError or ValueError on failure. Results are cached by coordinates
+    rounded to 2 decimals (about 1 km); a result with no usable value is not cached.
+    """
     key = (round(lat, 2), round(lon, 2))
     cached = _pm_readings.get(key)
     if cached is not None:
@@ -269,6 +306,7 @@ async def fetch_pm(client: httpx.AsyncClient, lat: float, lon: float) -> _PM:
 
 
 async def _fetch_pm_upstream(client: httpx.AsyncClient, lat: float, lon: float) -> _PM:
+    """Query the air quality API and parse the current PM values."""
     params: dict[str, str | float] = {"latitude": lat, "longitude": lon, "current": "pm2_5,pm10"}
     resp = await client.get(AQ_URL, params=params, timeout=OPEN_METEO_TIMEOUT_S)
     resp.raise_for_status()
@@ -289,7 +327,7 @@ async def get_reading(
     """Resolve the location, fetch PM values, and fall back to an estimate."""
     if city is not None:
         name = city.strip()
-        if not 1 <= len(name) <= 100:
+        if not 1 <= len(name) <= MAX_CITY_LENGTH:
             raise InvalidCity()
         place = await geocode(client, name)
     elif lat is not None and lon is not None:
@@ -302,4 +340,4 @@ async def get_reading(
         return estimated_reading(place.name, place.latitude, place.longitude)
     if pm25 is None and pm10 is None:
         return estimated_reading(place.name, place.latitude, place.longitude)
-    return _build(place.name, place.latitude, place.longitude, pm25, pm10, "live", observed_at)
+    return _build(place, pm25, pm10, "live", observed_at)

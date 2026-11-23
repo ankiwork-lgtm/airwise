@@ -43,7 +43,17 @@ target-version = "py313"
 extend-exclude = ["*.md"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP"]
+select = ["E", "F", "I", "B", "UP", "SIM", "C4", "RET", "PTH", "N", "PL", "S", "D"]
+# Exception class names are public API (imported by tests and error mapping); keep them as is.
+ignore = ["N818"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+# Tests: asserts, literal expected values, local imports and loose docstrings are normal.
+"tests/**" = ["S101", "S105", "S106", "S310", "PLR2004", "PLC0415", "PLR0913", "PLR0917", "PLR0915", "PLR0912", "PLR0911", "PLW0108", "PLW2901", "S110", "SIM105", "SIM117", "SIM300", "C408", "C416", "N818", "D"]
+"api/**" = ["D"]
 
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI dependency/param declarations in signature defaults are the framework idiom.
@@ -54,7 +64,7 @@ python_version = "3.13"
 files = ["airwise"]
 warn_unused_ignores = true
 warn_redundant_casts = true
-check_untyped_defs = true
+strict = true
 
 [tool.coverage.run]
 source = ["airwise"]

@@ -12,23 +12,29 @@ CLEANUP_THRESHOLD = 10_000
 
 @dataclass(frozen=True)
 class Decision:
+    """Outcome of a rate limit check: whether to allow, and seconds to wait if not."""
+
     allowed: bool
     retry_after: int = 0
 
 
 class FixedWindowLimiter:
+    """Allow ``limit`` calls per ``window_s`` seconds for each key."""
+
     def __init__(
         self,
         limit: int,
         window_s: float,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
+        """Configure the limit and window; ``clock`` is injectable for tests."""
         self.limit = limit
         self.window_s = window_s
         self.clock = clock
         self._state: dict[str, tuple[float, int]] = {}
 
     def check(self, key: str) -> Decision:
+        """Count one call for ``key`` and return whether it is allowed."""
         now = self.clock()
         if len(self._state) > CLEANUP_THRESHOLD:
             self._cleanup(now)

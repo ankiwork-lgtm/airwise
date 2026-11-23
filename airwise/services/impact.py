@@ -13,11 +13,17 @@ from pydantic import ValidationError
 from airwise.errors import InvalidInput
 from airwise.models import AirReading, HouseholdProfile, ImpactRow
 
+# CPCB band floors used by the rules below: Moderate starts at 101, Poor at 201.
+MODERATE_AQI_MIN = 101
+POOR_AQI_MIN = 201
+
 _NOTE = "Illustrative estimate informed by public CPCB and WHO guidance."
 
 
 @dataclass(frozen=True)
 class Rule:
+    """One impact rule: when it applies, its figures, and the wording shown to the user."""
+
     id: str
     applies: Callable[[HouseholdProfile, AirReading], bool]
     pct: Callable[[HouseholdProfile, AirReading], float]
@@ -29,6 +35,8 @@ class Rule:
 
 @dataclass(frozen=True)
 class ImpactResult:
+    """Applicable impact rows and their combined exposure score."""
+
     rows: list[ImpactRow]
     exposure_score: float
 
@@ -44,7 +52,7 @@ def _zero(p: HouseholdProfile, r: AirReading) -> float:
 RULES: tuple[Rule, ...] = (
     Rule(
         id="n95_mask",
-        applies=lambda p, r: r.aqi >= 101,
+        applies=lambda p, r: r.aqi >= MODERATE_AQI_MIN,
         pct=lambda p, r: 20.0 if _vulnerable(p) else 15.0,
         co2=_zero,
         action="Wear a well-fitted N95 mask outdoors when air quality is poor.",
@@ -62,7 +70,7 @@ RULES: tuple[Rule, ...] = (
     ),
     Rule(
         id="close_windows_peak",
-        applies=lambda p, r: p.ventilation in ("open_often", "sometimes") and r.aqi >= 201,
+        applies=lambda p, r: p.ventilation in ("open_often", "sometimes") and r.aqi >= POOR_AQI_MIN,
         pct=lambda p, r: 10.0 if p.ventilation == "open_often" else 5.0,
         co2=_zero,
         action="Keep windows closed during peak pollution hours.",
@@ -71,7 +79,7 @@ RULES: tuple[Rule, ...] = (
     ),
     Rule(
         id="wet_cleaning",
-        applies=lambda p, r: r.aqi >= 101,
+        applies=lambda p, r: r.aqi >= MODERATE_AQI_MIN,
         pct=lambda p, r: 5.0,
         co2=_zero,
         action="Clean with a damp cloth or wet mop instead of dry sweeping.",
@@ -117,7 +125,7 @@ RULES: tuple[Rule, ...] = (
     Rule(
         id="no_burning_pledge",
         applies=lambda p, r: (
-            r.aqi >= 201 or p.cooking_fuel == "biomass" or p.heating == "biomass_burning"
+            r.aqi >= POOR_AQI_MIN or p.cooking_fuel == "biomass" or p.heating == "biomass_burning"
         ),
         pct=lambda p, r: 5.0,
         co2=lambda p, r: 0.5,
@@ -156,6 +164,7 @@ def _validate(profile: object, reading: object) -> None:
 
 
 def compute_impact(profile: HouseholdProfile, reading: AirReading) -> ImpactResult:
+    """Build the impact table for ``profile`` and ``reading`` and combine it into a score."""
     _validate(profile, reading)
     rows: list[ImpactRow] = []
     for rule in RULES:

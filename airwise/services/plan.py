@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from airwise.config import Deadline, anthropic_api_key
 from airwise.models import (
     AirReading,
@@ -28,6 +30,7 @@ from airwise.services.llm import (
 
 _NOTE_MAX = 500
 _SLOTS = ("morning", "commute", "midday", "evening")
+_MAX_SLOT_ITEMS = 3
 
 
 def _sanitize_item(item: LLMItem, rows: dict[str, ImpactRow]) -> PlanItem:
@@ -41,7 +44,7 @@ def _sanitize_item(item: LLMItem, rows: dict[str, ImpactRow]) -> PlanItem:
     )
 
 
-def sanitize(llm_plan: LLMPlan, impact: ImpactResult) -> dict:
+def sanitize(llm_plan: LLMPlan, impact: ImpactResult) -> dict[str, Any]:
     """Unknown impact_id becomes None; figures are copied from the table only."""
     rows = {r.id: r for r in impact.rows}
 
@@ -95,7 +98,7 @@ def ensure_local_context(
     text, why = FACTOR_ITEM[factor]
     new_item = PlanItem(text=text[:300], why_it_matters=why[:300], context_factor=factor)
     for slot in ("midday", "morning", "evening", "commute"):
-        if len(routine[slot]) < 3:
+        if len(routine[slot]) < _MAX_SLOT_ITEMS:
             routine[slot].append(new_item)
             return
     routine["midday"][-1] = new_item
@@ -108,6 +111,7 @@ async def generate_plan(
     llm: LLMClient,
     deadline: Deadline,
 ) -> Plan:
+    """Return the plan: LLM wording over server-owned figures, or the deterministic fallback."""
     impact = compute_impact(profile, reading)
     if not anthropic_api_key() or deadline.should_skip_llm():
         return build_fallback_plan(profile, reading, impact)

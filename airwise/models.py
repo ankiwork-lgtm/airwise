@@ -11,6 +11,8 @@ GrapStage = Literal["none", "Stage I", "Stage II", "Stage III", "Stage IV"]
 
 
 class AirReading(BaseModel):
+    """Current air quality for a location, from live data or an estimate."""
+
     model_config = ConfigDict(extra="forbid")
 
     location_name: str = Field(min_length=1, max_length=100)
@@ -33,6 +35,8 @@ Ventilation = Literal["open_often", "sometimes", "mostly_closed"]
 
 
 class HouseholdProfile(BaseModel):
+    """Household details the plan is tailored to."""
+
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     city: str = Field(min_length=1, max_length=100)
@@ -47,6 +51,8 @@ class HouseholdProfile(BaseModel):
 
 
 class ImpactFigures(BaseModel):
+    """Approximate exposure and CO2 figures for one action."""
+
     model_config = ConfigDict(extra="forbid")
 
     exposure_reduction_pct: float = Field(ge=0, le=100)
@@ -55,6 +61,8 @@ class ImpactFigures(BaseModel):
 
 
 class ImpactRow(ImpactFigures):
+    """One row of the impact table: an action with its figures and basis."""
+
     id: str = Field(min_length=1, max_length=64)
     action: str = Field(min_length=1, max_length=200)
     basis: str = Field(min_length=1, max_length=200)
@@ -74,6 +82,8 @@ ContextFactor = Literal[
 
 
 class PlanItem(BaseModel):
+    """A single recommendation, optionally tied to an impact row or local factor."""
+
     model_config = ConfigDict(extra="forbid")
 
     text: str = Field(min_length=1, max_length=300)
@@ -84,6 +94,8 @@ class PlanItem(BaseModel):
 
 
 class Routine(BaseModel):
+    """Recommendations for each part of the day."""
+
     model_config = ConfigDict(extra="forbid")
 
     morning: list[PlanItem] = Field(min_length=1, max_length=3)
@@ -93,6 +105,8 @@ class Routine(BaseModel):
 
 
 class Plan(BaseModel):
+    """The full plan returned to the client."""
+
     model_config = ConfigDict(extra="forbid")
 
     routine: Routine
@@ -106,6 +120,8 @@ class Plan(BaseModel):
 
 
 class PlanRequest(BaseModel):
+    """Request body for plan generation: a profile and optional coordinates."""
+
     model_config = ConfigDict(extra="forbid")
 
     profile: HouseholdProfile
@@ -120,6 +136,8 @@ class PlanRequest(BaseModel):
 
 
 class PlanResponse(BaseModel):
+    """A plan together with the air reading it was based on."""
+
     model_config = ConfigDict(extra="forbid")
 
     plan: Plan
@@ -127,6 +145,8 @@ class PlanResponse(BaseModel):
 
 
 class LLMItem(BaseModel):
+    """A recommendation as written by the LLM, before figures are attached."""
+
     model_config = ConfigDict(extra="forbid")
 
     text: str = Field(min_length=1, max_length=300)
@@ -136,6 +156,8 @@ class LLMItem(BaseModel):
 
 
 class LLMRoutine(BaseModel):
+    """LLM-written routine, one list of items per part of the day."""
+
     model_config = ConfigDict(extra="forbid")
 
     morning: list[LLMItem] = Field(min_length=1, max_length=3)
@@ -145,6 +167,8 @@ class LLMRoutine(BaseModel):
 
 
 class LLMPlan(BaseModel):
+    """Structured plan wording as returned by the LLM."""
+
     model_config = ConfigDict(extra="forbid")
 
     routine: LLMRoutine
@@ -154,6 +178,8 @@ class LLMPlan(BaseModel):
 
 
 class ChatTurn(BaseModel):
+    """One earlier message in a chat conversation."""
+
     model_config = ConfigDict(extra="forbid")
 
     role: Literal["user", "assistant"]
@@ -161,6 +187,8 @@ class ChatTurn(BaseModel):
 
 
 class ChatRequest(BaseModel):
+    """Request body for chat: a message, history and the current plan context."""
+
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     message: str = Field(min_length=1, max_length=500)
@@ -171,6 +199,8 @@ class ChatRequest(BaseModel):
 
 
 class ChatReply(BaseModel):
+    """Reply returned to the chat client."""
+
     model_config = ConfigDict(extra="forbid")
 
     reply: str = Field(max_length=2000)
@@ -178,6 +208,8 @@ class ChatReply(BaseModel):
 
 
 class LLMChat(BaseModel):
+    """Structured chat answer as returned by the LLM."""
+
     model_config = ConfigDict(extra="forbid")
 
     reply: str = Field(min_length=1, max_length=2000)
