@@ -247,7 +247,7 @@ def test_aclose_closes_and_clears_and_is_idempotent(monkeypatch):
         first = llm._get_client()
         await llm.aclose_llm_client()
         assert first.is_closed
-        assert llm._shared is None
+        assert llm.llm_client_cache.shared is None
         await llm.aclose_llm_client()  # second time: no-op
         assert await c.complete_json(**kw) == {"a": 1}
         second = llm._get_client()

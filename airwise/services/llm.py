@@ -16,35 +16,49 @@ MAX_OUTPUT_TOKENS = 2048
 _TRANSPORT: httpx.AsyncBaseTransport | None = None  # tests inject httpx.MockTransport
 _LIMITS = httpx.Limits(max_connections=20, max_keepalive_connections=10)
 
-# (loop, transport, client) of the shared client. An AsyncClient is bound to the event loop it
-# is first used in, so it is only reused for that same, still-open loop and transport.
-_shared: (
-    tuple[asyncio.AbstractEventLoop, httpx.AsyncBaseTransport | None, httpx.AsyncClient] | None
-) = None
+
+class LLMClientCache:
+    """Manages the shared LLM AsyncClient bound to the event loop and transport."""
+
+    def __init__(self) -> None:
+        """Initialize empty client cache."""
+        self.shared: (
+            tuple[asyncio.AbstractEventLoop, httpx.AsyncBaseTransport | None, httpx.AsyncClient]
+            | None
+        ) = None
+
+    def get_client(self) -> httpx.AsyncClient:
+        """Return the shared client, creating it lazily. Must be called inside a running loop."""
+        loop = asyncio.get_running_loop()
+        if self.shared is not None:
+            old_loop, old_transport, client = self.shared
+            if old_loop is loop and not old_loop.is_closed() and old_transport is _TRANSPORT:
+                return client
+            # Other loop or transport: drop it. It cannot be awaited from here (its loop may be
+            # closed); the process-level aclose_llm_client() closes the live one on shutdown.
+            self.shared = None
+        client = httpx.AsyncClient(transport=_TRANSPORT, limits=_LIMITS)
+        self.shared = (loop, _TRANSPORT, client)
+        return client
+
+    async def aclose(self) -> None:
+        """Close and forget the shared client, if any. Safe to call repeatedly."""
+        shared, self.shared = self.shared, None
+        if shared is not None and shared[0] is asyncio.get_running_loop():
+            await shared[2].aclose()
+
+
+llm_client_cache = LLMClientCache()
 
 
 def _get_client() -> httpx.AsyncClient:
     """Return the shared client, creating it lazily. Must be called inside a running loop."""
-    global _shared  # noqa: PLW0603 - module-level cache, patched by tests
-    loop = asyncio.get_running_loop()
-    if _shared is not None:
-        old_loop, old_transport, client = _shared
-        if old_loop is loop and not old_loop.is_closed() and old_transport is _TRANSPORT:
-            return client
-        # Other loop or transport: drop it. It cannot be awaited from here (its loop may be
-        # closed); the process-level aclose_llm_client() closes the live one on shutdown.
-        _shared = None
-    client = httpx.AsyncClient(transport=_TRANSPORT, limits=_LIMITS)
-    _shared = (loop, _TRANSPORT, client)
-    return client
+    return llm_client_cache.get_client()
 
 
 async def aclose_llm_client() -> None:
     """Close and forget the shared client, if any. Safe to call repeatedly."""
-    global _shared  # noqa: PLW0603 - module-level cache, patched by tests
-    shared, _shared = _shared, None
-    if shared is not None and shared[0] is asyncio.get_running_loop():
-        await shared[2].aclose()
+    await llm_client_cache.aclose()
 
 
 class LLMUnavailable(Exception):

@@ -40,30 +40,43 @@ JS_PATH = PUBLIC_DIR / "app.js"
 logger = logging.getLogger("airwise")
 
 
-# An AsyncClient is bound to the event loop it first runs in, so the loop is stored with it.
-_client: httpx.AsyncClient | None = None
-_client_loop: asyncio.AbstractEventLoop | None = None
+class HttpClientContainer:
+    """Manages the process-wide AsyncClient bound to the active event loop."""
+
+    def __init__(self) -> None:
+        """Initialize empty container."""
+        self.client: httpx.AsyncClient | None = None
+        self.loop: asyncio.AbstractEventLoop | None = None
+
+    async def get_client(self) -> httpx.AsyncClient:
+        """Return the active client, recreating it lazily if the event loop changes."""
+        loop = asyncio.get_running_loop()
+        # The running loop is never closed, so a stored loop that is not this one is either
+        # another live loop or a closed one: drop its client (it cannot be awaited from here).
+        if self.client is None or self.loop is not loop:
+            self.client = httpx.AsyncClient(timeout=OPEN_METEO_TIMEOUT_S)
+            self.loop = loop
+        return self.client
+
+    async def aclose(self) -> None:
+        """Close and forget the shared client, if any. Safe to call repeatedly."""
+        client, loop = self.client, self.loop
+        self.client = self.loop = None
+        if client is not None and loop is asyncio.get_running_loop():
+            await client.aclose()
+
+
+http_client_container = HttpClientContainer()
 
 
 async def get_http_client() -> httpx.AsyncClient:
     """Shared AsyncClient; override via app.dependency_overrides in tests."""
-    global _client, _client_loop  # noqa: PLW0603 - process-wide state, patched by tests
-    loop = asyncio.get_running_loop()
-    # The running loop is never closed, so a stored loop that is not this one is either
-    # another live loop or a closed one: drop its client (it cannot be awaited from here).
-    if _client is None or _client_loop is not loop:
-        _client = httpx.AsyncClient(timeout=OPEN_METEO_TIMEOUT_S)
-        _client_loop = loop
-    return _client
+    return await http_client_container.get_client()
 
 
 async def aclose_http_client() -> None:
     """Close and forget the shared client, if any. Safe to call repeatedly."""
-    global _client, _client_loop  # noqa: PLW0603 - process-wide state, patched by tests
-    client, loop = _client, _client_loop
-    _client = _client_loop = None
-    if client is not None and loop is asyncio.get_running_loop():
-        await client.aclose()
+    await http_client_container.aclose()
 
 
 @asynccontextmanager

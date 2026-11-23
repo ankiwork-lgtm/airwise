@@ -112,17 +112,19 @@ This plan provides an incremental, risk-controlled roadmap to resolve all remain
 
 ---
 
-### Step 5: Encapsulate Shared Clients into Loop-Safe Container (`PLW0603`)
+### Step 5: Encapsulate Shared Clients into Loop-Safe Container (`PLW0603`) [COMPLETED]
 - **Goal**: Eliminate naked module-level `global _client` and `global _shared` variables while keeping test injection hooks intact.
 - **Target Files**:
   - `airwise/main.py`
   - `airwise/services/llm.py`
+  - `tests/test_lifespan.py`
+  - `tests/test_llm_client.py`
 - **Actions**:
-  1. Create a `HttpClientContainer` class in `airwise/main.py` that encapsulates `_client` and `_client_loop`.
-  2. Expose `get_http_client()` and `aclose_http_client()` delegation methods on the container.
-  3. In `airwise/services/llm.py`, create an `LLMClientCache` class managing lazy client creation and event loop verification.
-  4. Ensure `app.dependency_overrides[get_http_client]` and the test monkeypatching hook `llm._TRANSPORT` remain 100% functional.
-  5. Remove `# noqa: PLW0603` comments.
+  1. Created `HttpClientContainer` class in `airwise/main.py` that encapsulates `client` and `loop`.
+  2. Exposed `get_http_client()` and `aclose_http_client()` delegation methods on the container.
+  3. In `airwise/services/llm.py`, created `LLMClientCache` class managing lazy client creation and event loop verification.
+  4. Preserved `app.dependency_overrides[get_http_client]` and the test monkeypatching hook `llm._TRANSPORT`.
+  5. Removed `# noqa: PLW0603` comments across both files.
 - **Verification**:
   ```powershell
   & .venv\Scripts\pytest.exe tests/test_lifespan.py tests/test_llm_client.py tests/test_coverage_edge_cases.py

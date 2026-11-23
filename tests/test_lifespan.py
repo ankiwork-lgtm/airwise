@@ -26,9 +26,9 @@ CHAT_OK = {
 @pytest.fixture(autouse=True)
 def _fresh_module_clients(monkeypatch):
     """Start every test with no shared clients, and restore the module state afterwards."""
-    monkeypatch.setattr(main, "_client", None)
-    monkeypatch.setattr(main, "_client_loop", None)
-    monkeypatch.setattr(llm, "_shared", None)
+    monkeypatch.setattr(main.http_client_container, "client", None)
+    monkeypatch.setattr(main.http_client_container, "loop", None)
+    monkeypatch.setattr(llm.llm_client_cache, "shared", None)
 
 
 @pytest.fixture
@@ -69,8 +69,8 @@ def _recorder(log: list[str], name: str):
 def test_shutdown_with_no_clients_is_clean():
     with TestClient(create_app()) as c:
         assert c.get("/api/health").status_code == 200
-    assert main._client is None
-    assert llm._shared is None
+    assert main.http_client_container.client is None
+    assert llm.llm_client_cache.shared is None
 
 
 # b. Open-Meteo client
@@ -82,10 +82,10 @@ def test_shutdown_closes_open_meteo_client(recorded_clients):
         assert r.status_code == 200
         assert len(recorded_clients) == 1
         assert not recorded_clients[0].is_closed
-        assert main._client is recorded_clients[0]
+        assert main.http_client_container.client is recorded_clients[0]
     assert recorded_clients[0].is_closed
-    assert main._client is None
-    assert main._client_loop is None
+    assert main.http_client_container.client is None
+    assert main.http_client_container.loop is None
 
 
 def test_shutdown_awaits_both_closers_exactly_once(monkeypatch):
@@ -110,11 +110,11 @@ def test_shutdown_closes_llm_client(monkeypatch):
         r = c.post("/api/chat", json=valid_payload())
         assert r.status_code == 200
         assert r.json().get("failed") is not True
-        assert llm._shared is not None
-        shared_client = llm._shared[2]
+        assert llm.llm_client_cache.shared is not None
+        shared_client = llm.llm_client_cache.shared[2]
         assert not shared_client.is_closed
     assert shared_client.is_closed
-    assert llm._shared is None
+    assert llm.llm_client_cache.shared is None
 
 
 # d. failure isolation
@@ -165,27 +165,27 @@ def test_client_from_closed_loop_is_replaced(recorded_clients):
     first = recorded_clients[0]
     assert c.get("/api/aqi", params={"city": "Delhi"}).status_code == 200
     assert len(recorded_clients) == 2
-    assert main._client is recorded_clients[1] is not first
+    assert main.http_client_container.client is recorded_clients[1] is not first
 
 
 def test_second_testclient_context_gets_its_own_client(monkeypatch, recorded_clients):
     with TestClient(create_app()) as c:
         assert c.get("/api/aqi", params={"city": "Delhi"}).status_code == 200
-        stale = main._client
-        stale_loop = main._client_loop
+        stale = main.http_client_container.client
+        stale_loop = main.http_client_container.loop
     assert stale is recorded_clients[0] and stale.is_closed
 
     # Simulate a leftover from loop A whose shutdown never ran (closed loop, open client).
-    monkeypatch.setattr(main, "_client", recorded_clients[0])
-    monkeypatch.setattr(main, "_client_loop", stale_loop)
+    monkeypatch.setattr(main.http_client_container, "client", recorded_clients[0])
+    monkeypatch.setattr(main.http_client_container, "loop", stale_loop)
     with TestClient(create_app()) as c:
         r = c.get("/api/aqi", params={"city": "Delhi"})
         assert r.status_code == 200
         assert len(recorded_clients) == 2
         second = recorded_clients[1]
-        assert main._client is second and not second.is_closed
+        assert main.http_client_container.client is second and not second.is_closed
     assert second.is_closed
-    assert main._client is None
+    assert main.http_client_container.client is None
 
 
 def test_aclose_http_client_from_other_loop_only_drops_reference(monkeypatch, recorded_clients):
@@ -193,12 +193,12 @@ def test_aclose_http_client_from_other_loop_only_drops_reference(monkeypatch, re
 
     with TestClient(create_app()) as c:
         c.get("/api/aqi", params={"city": "Delhi"})
-        client, loop = main._client, main._client_loop
+        client, loop = main.http_client_container.client, main.http_client_container.loop
     # The with-block already closed it; put it back as if it belonged to a dead loop.
-    monkeypatch.setattr(main, "_client", client)
-    monkeypatch.setattr(main, "_client_loop", loop)
+    monkeypatch.setattr(main.http_client_container, "client", client)
+    monkeypatch.setattr(main.http_client_container, "loop", loop)
     asyncio.run(main.aclose_http_client())  # different loop: must not raise
-    assert main._client is None and main._client_loop is None
+    assert main.http_client_container.client is None and main.http_client_container.loop is None
     asyncio.run(main.aclose_http_client())  # nothing cached: no-op
 
 
