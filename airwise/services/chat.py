@@ -105,7 +105,16 @@ def _failure() -> ChatReply:
 
 
 async def answer(req: ChatRequest, *, llm: LLMClient, deadline: Deadline) -> ChatReply:
-    """Answer a chat message: decline out-of-scope questions, otherwise ask the LLM."""
+    """Generate assistant answer within the context of the user's plan.
+
+    Args:
+        req: ChatRequest containing user message, conversation history, and plan context.
+        llm: LLM client interface for executing completion.
+        deadline: Request budget deadline to ensure timely responses.
+
+    Returns:
+        A ChatReply containing the assistant answer and whether generation failed.
+    """
     if out_of_scope(req.message) is not None:
         return ChatReply(reply=SCOPE_DECLINE_REPLY, failed=False)
     if not anthropic_api_key() or deadline.should_skip_llm():

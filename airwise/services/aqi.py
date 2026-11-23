@@ -76,9 +76,16 @@ PM10_BREAKPOINTS: list[Breakpoint] = [
 
 
 def sub_index(conc: float, table: list[Breakpoint]) -> float:
-    """Piecewise-linear sub-index.
+    """Calculate the piecewise-linear sub-index for a pollutant concentration.
 
     Gap values take the next range's low index; values above the top range give 500.
+
+    Args:
+        conc: Ambient pollutant concentration in micrograms per cubic metre.
+        table: List of Breakpoint tuples defining concentration and index ranges.
+
+    Returns:
+        The interpolated sub-index value, or 500.0 if above the maximum breakpoint.
     """
     for bp in table:
         if conc <= bp.bp_hi:
@@ -89,7 +96,18 @@ def sub_index(conc: float, table: list[Breakpoint]) -> float:
 
 
 def compute_aqi(pm25: float | None, pm10: float | None) -> int:
-    """Maximum of the available sub-indices, rounded and capped at 500."""
+    """Compute composite CPCB AQI as the maximum of available PM sub-indices.
+
+    Args:
+        pm25: PM2.5 concentration in ug/m3, or None if unavailable.
+        pm10: PM10 concentration in ug/m3, or None if unavailable.
+
+    Returns:
+        The rounded composite AQI clamped between 0 and 500.
+
+    Raises:
+        ValueError: If both pm25 and pm10 are None.
+    """
     subs: list[float] = []
     if pm25 is not None:
         subs.append(sub_index(pm25, PM25_BREAKPOINTS))
@@ -101,7 +119,14 @@ def compute_aqi(pm25: float | None, pm10: float | None) -> int:
 
 
 def band_for(aqi: int) -> CPCBBand:
-    """Return the CPCB band for an AQI value."""
+    """Return the CPCB qualitative air quality band for an AQI value.
+
+    Args:
+        aqi: The integer Air Quality Index (0-500).
+
+    Returns:
+        The corresponding CPCBBand ("Good", "Satisfactory", "Moderate", etc.).
+    """
     for upper, band in _BAND_UPPER_BOUNDS:
         if aqi <= upper:
             return band
@@ -109,7 +134,14 @@ def band_for(aqi: int) -> CPCBBand:
 
 
 def grap_for(aqi: int) -> GrapStage:
-    """Return the indicative GRAP stage for an AQI value."""
+    """Return the indicative GRAP stage for an AQI value.
+
+    Args:
+        aqi: The integer Air Quality Index (0-500).
+
+    Returns:
+        The corresponding GrapStage ("none", "Stage I", "Stage II", "Stage III", or "Stage IV").
+    """
     for upper, stage in _GRAP_UPPER_BOUNDS:
         if aqi <= upper:
             return stage
@@ -297,10 +329,19 @@ async def _geocode_upstream(client: httpx.AsyncClient, city: str) -> Place:
 
 
 async def fetch_pm(client: httpx.AsyncClient, lat: float, lon: float) -> PMReading:
-    """Fetch current PM2.5, PM10 and observation time.
+    """Fetch current PM2.5, PM10 and observation time from Open-Meteo with caching.
 
-    Raises httpx.HTTPError or ValueError on failure. Results are cached by coordinates
-    rounded to 2 decimals (about 1 km); a result with no usable value is not cached.
+    Args:
+        client: The HTTP client used for making upstream requests.
+        lat: Latitude in decimal degrees.
+        lon: Longitude in decimal degrees.
+
+    Returns:
+        A PMReading tuple containing pm2_5, pm10, and UTC ISO observation timestamp.
+
+    Raises:
+        httpx.HTTPError: If the upstream API returns an HTTP error.
+        ValueError: If the response cannot be parsed.
     """
     key = (round(lat, 2), round(lon, 2))
     cached = _pm_readings.get(key)
@@ -335,7 +376,22 @@ async def get_reading(
     lat: float | None,
     lon: float | None,
 ) -> AirReading:
-    """Resolve the location, fetch PM values, and fall back to an estimate."""
+    """Resolve location, retrieve PM readings, and compute composite air quality.
+
+    Args:
+        client: The HTTP client used for geocoding and air quality lookups.
+        city: City name to look up, or None if using coordinates.
+        lat: Latitude in decimal degrees, or None if using city.
+        lon: Longitude in decimal degrees, or None if using city.
+
+    Returns:
+        An AirReading object with location, PM values, AQI, band, and GRAP stage.
+
+    Raises:
+        InvalidCity: If city is empty or invalid, or if neither city nor coordinates are given.
+        CityNotFound: If geocoding finds no matching city.
+        LookupUnavailable: If upstream geocoding fails.
+    """
     if city is not None:
         name = city.strip()
         if not 1 <= len(name) <= MAX_CITY_LENGTH:

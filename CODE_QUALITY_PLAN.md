@@ -88,7 +88,8 @@ This plan provides an incremental, risk-controlled roadmap to resolve all remain
 
 ---
 
-### Step 4: Expand Public Service Functions to Full Google-Style Docstrings
+### Step 4: Expand Public Service Functions to Full Google-Style Docstrings [COMPLETED]
+- **Status**: Done (commit-ready)
 - **Goal**: Satisfy rigorous docstring completeness linters (Sphinx / Darglint / Google style) with explicit parameter types, return values, and exceptions raised.
 - **Target Files**:
   - `airwise/services/aqi.py`

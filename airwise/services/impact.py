@@ -164,7 +164,18 @@ def _validate(profile: object, reading: object) -> None:
 
 
 def compute_impact(profile: HouseholdProfile, reading: AirReading) -> ImpactResult:
-    """Build the impact table for ``profile`` and ``reading`` and combine it into a score."""
+    """Evaluate applicable impact rules and compute composite exposure score.
+
+    Args:
+        profile: Household profile detailing occupant vulnerabilities and behaviors.
+        reading: Air reading for the relevant location.
+
+    Returns:
+        An ImpactResult containing applicable ImpactRow entries and the exposure score.
+
+    Raises:
+        InvalidInput: If profile or reading is None, not an instance, or fails schema validation.
+    """
     _validate(profile, reading)
     rows: list[ImpactRow] = []
     for rule in RULES:

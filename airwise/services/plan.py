@@ -118,7 +118,17 @@ async def generate_plan(
     llm: LLMClient,
     deadline: Deadline,
 ) -> Plan:
-    """Return the plan: LLM wording over server-owned figures, or the deterministic fallback."""
+    """Generate protective routine plan using LLM wording or deterministic fallback.
+
+    Args:
+        profile: Household profile containing commute, cooking, heating, and vulnerabilities.
+        reading: Air quality reading for the household's location.
+        llm: The LLM client implementation used to request structured wording.
+        deadline: Request budget deadline to avoid slow upstream calls.
+
+    Returns:
+        A validated Plan object containing daily routines, indoor hacks, and impact table.
+    """
     impact = compute_impact(profile, reading)
     if not anthropic_api_key() or deadline.should_skip_llm():
         return build_fallback_plan(profile, reading, impact)

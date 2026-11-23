@@ -96,7 +96,14 @@ def _item(
 
 
 def build_vulnerable_note(profile: HouseholdProfile) -> str:
-    """Return a note naming each vulnerable group in the household (or a neutral sentence)."""
+    """Return a health guidance note naming vulnerable groups in the household.
+
+    Args:
+        profile: Household profile indicating presence of kids, elderly, or respiratory issues.
+
+    Returns:
+        A tailored precautions sentence trimmed to 500 characters.
+    """
     groups = []
     if profile.kids:
         groups.append("kids")
@@ -119,7 +126,15 @@ def build_vulnerable_note(profile: HouseholdProfile) -> str:
 
 
 def context_factors(profile: HouseholdProfile, reading: AirReading) -> list[ContextFactor]:
-    """List the local pollution factors relevant to this household and reading."""
+    """Identify local and behavioral pollution factors relevant to household.
+
+    Args:
+        profile: Household profile detailing commute mode, heating, and cooking fuel.
+        reading: AirReading providing current location AQI.
+
+    Returns:
+        List of matching ContextFactor identifiers.
+    """
     factors: list[ContextFactor] = []
     if profile.cooking_fuel == "biomass" or profile.heating == "biomass_burning":
         factors.append("biomass_cooking_heating")
@@ -206,7 +221,16 @@ def _add_context_items(factors: list[ContextFactor], routine: dict[str, list[Pla
 def build_fallback_plan(
     profile: HouseholdProfile, reading: AirReading, impact: ImpactResult
 ) -> Plan:
-    """Build a deterministic, schema-valid plan from the band texts and the impact rows."""
+    """Construct a deterministic, schema-valid plan from AQI band and impact rows.
+
+    Args:
+        profile: Household profile for tailoring daily routines and commute actions.
+        reading: AirReading providing AQI, CPCB band, and GRAP stage.
+        impact: Evaluated impact result containing active impact table rows and exposure score.
+
+    Returns:
+        A fully-populated Plan model with routine slots, indoor hacks, and swaps.
+    """
     rows = {r.id: r for r in impact.rows}
     band = reading.band
     factors = context_factors(profile, reading)
