@@ -127,6 +127,14 @@ class Place(NamedTuple):
     longitude: float
 
 
+class PMReading(NamedTuple):
+    """Current particulate readings for a location; ``observed_at`` is UTC ISO 8601."""
+
+    pm2_5: float | None
+    pm10: float | None
+    observed_at: str | None
+
+
 _clock: Callable[[], float] = time.monotonic  # tests patch this
 
 
@@ -166,9 +174,8 @@ class _TTLCache[V]:
         self._items.clear()
 
 
-_PM = tuple[float | None, float | None, str | None]  # pm2_5, pm10, observation time (UTC ISO)
 _places: _TTLCache[Place] = _TTLCache()
-_pm_readings: _TTLCache[_PM] = _TTLCache()
+_pm_readings: _TTLCache[PMReading] = _TTLCache()
 
 
 def clear_cache() -> None:
@@ -289,7 +296,7 @@ async def _geocode_upstream(client: httpx.AsyncClient, city: str) -> Place:
     return Place(name, lat, lon)
 
 
-async def fetch_pm(client: httpx.AsyncClient, lat: float, lon: float) -> _PM:
+async def fetch_pm(client: httpx.AsyncClient, lat: float, lon: float) -> PMReading:
     """Fetch current PM2.5, PM10 and observation time.
 
     Raises httpx.HTTPError or ValueError on failure. Results are cached by coordinates
@@ -300,12 +307,12 @@ async def fetch_pm(client: httpx.AsyncClient, lat: float, lon: float) -> _PM:
     if cached is not None:
         return cached
     pm = await _fetch_pm_upstream(client, lat, lon)
-    if pm[:2] != (None, None):
+    if pm.pm2_5 is not None or pm.pm10 is not None:
         _pm_readings.put(key, pm)
     return pm
 
 
-async def _fetch_pm_upstream(client: httpx.AsyncClient, lat: float, lon: float) -> _PM:
+async def _fetch_pm_upstream(client: httpx.AsyncClient, lat: float, lon: float) -> PMReading:
     """Query the air quality API and parse the current PM values."""
     params: dict[str, str | float] = {"latitude": lat, "longitude": lon, "current": "pm2_5,pm10"}
     resp = await client.get(AQ_URL, params=params, timeout=OPEN_METEO_TIMEOUT_S)
@@ -313,8 +320,12 @@ async def _fetch_pm_upstream(client: httpx.AsyncClient, lat: float, lon: float) 
     data = resp.json()
     current = data.get("current") if isinstance(data, dict) else None
     if not isinstance(current, dict):
-        return None, None, None
-    return _num(current.get("pm2_5")), _num(current.get("pm10")), _observed_at(current.get("time"))
+        return PMReading(None, None, None)
+    return PMReading(
+        _num(current.get("pm2_5")),
+        _num(current.get("pm10")),
+        _observed_at(current.get("time")),
+    )
 
 
 async def get_reading(
@@ -335,9 +346,9 @@ async def get_reading(
     else:
         raise InvalidCity()
     try:
-        pm25, pm10, observed_at = await fetch_pm(client, place.latitude, place.longitude)
+        pm = await fetch_pm(client, place.latitude, place.longitude)
     except (httpx.HTTPError, ValueError):
         return estimated_reading(place.name, place.latitude, place.longitude)
-    if pm25 is None and pm10 is None:
+    if pm.pm2_5 is None and pm.pm10 is None:
         return estimated_reading(place.name, place.latitude, place.longitude)
-    return _build(place, pm25, pm10, "live", observed_at)
+    return _build(place, pm.pm2_5, pm.pm10, "live", pm.observed_at)

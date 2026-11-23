@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from airwise.config import Deadline, anthropic_api_key
@@ -27,6 +28,8 @@ from airwise.services.llm import (
     build_plan_user_prompt,
     build_system_prompt,
 )
+
+logger = logging.getLogger("airwise")
 
 _NOTE_MAX = 500
 _SLOTS = ("morning", "commute", "midday", "evening")
@@ -139,5 +142,11 @@ async def generate_plan(
             estimated=reading.source == "estimated",
         )
     # Deliberately broad: any LLM error, timeout, or invalid output means fallback.
-    except Exception:
+    except Exception as exc:
+        # Log only the class: the message can echo prompt or provider response text.
+        logger.warning(
+            "Plan generation fell back to deterministic rules: %s",
+            type(exc).__name__,
+            extra={"error_type": type(exc).__name__},
+        )
         return build_fallback_plan(profile, reading, impact)

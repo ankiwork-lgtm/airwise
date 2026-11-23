@@ -1,11 +1,12 @@
 import asyncio
+import logging
 import os
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from airwise.config import Deadline
-from airwise.models import Plan
+from airwise.models import AirReading, HouseholdProfile, Plan
 from airwise.services.impact import compute_impact
 from airwise.services.llm import LLMUnavailable
 from airwise.services.plan import generate_plan
@@ -164,3 +165,38 @@ def test_llm_outcomes_map_to_valid_plan_with_at_most_one_call(data, profile, rea
         row = by_id[item.impact_id]
         assert item.impact.exposure_reduction_pct == row.exposure_reduction_pct
         assert item.impact.co2_kg_per_day == row.co2_kg_per_day
+
+
+def test_llm_failure_logs_error_class_without_message(monkeypatch, caplog):
+    profile = HouseholdProfile(
+        city="Delhi",
+        kids=False,
+        elderly=False,
+        respiratory=False,
+        commute="car",
+        cooking_fuel="lpg",
+        heating="none",
+        has_purifier=False,
+        ventilation="sometimes",
+    )
+    reading = AirReading(
+        location_name="Delhi",
+        latitude=28.6,
+        longitude=77.2,
+        pm2_5=120.0,
+        pm10=200.0,
+        aqi=300,
+        band="Poor",
+        grap_stage="Stage I",
+        source="estimated",
+    )
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    caplog.set_level(logging.WARNING, logger="airwise")
+
+    llm = FakeLLM(exc=RuntimeError("SECRET-PROMPT-ECHO"))
+    plan = asyncio.run(generate_plan(profile, reading, llm=llm, deadline=Deadline()))
+
+    assert plan.fallback is True
+    assert "fell back to deterministic rules: RuntimeError" in caplog.text
+    assert "SECRET-PROMPT-ECHO" not in caplog.text
+    assert "test-key" not in caplog.text
