@@ -9,6 +9,9 @@ __pycache__/
 venv/
 env/
 .hypothesis/
+.ruff_cache/
+.mypy_cache/
+.bob/
 
 .coverage
 .coverage.*
