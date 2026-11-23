@@ -25,7 +25,7 @@ def test_result_heading_is_focused_after_unhide_on_plan_render_only():
     unhide = body.index('byId("result").hidden = false')
     focus = body.index("focusControl(heading)")
     assert unhide < focus
-    assert 'var heading = byId("result-h")' in body
+    assert 'const heading = byId("result-h")' in body
     assert re.search(r"if\s*\(\s*plan\s*\)\s*\{\s*focusControl\(heading\);\s*\}", body)
     assert body.count("focusControl(") == 1  # one focus call, none on the reading-only path
 
@@ -47,17 +47,17 @@ def test_impact_table_has_caption_as_first_child():
     body = js_function("renderImpact")
     assert "IMPACT_CAPTION" in body
     caption = body.index('table.appendChild(el("caption", IMPACT_CAPTION')
-    assert body.index('var table = el("table")') < caption < body.index("thead")
+    assert body.index('const table = el("table")') < caption < body.index("thead")
     assert caption < body.index("table.appendChild(thead)")
     assert caption < body.index("table.appendChild(tbody)")
     assert body.count("table.appendChild(") == 3  # caption, thead, tbody: caption is first
-    assert re.search(r'var IMPACT_CAPTION = "[^"]*approximate\.";', JS)
+    assert re.search(r'const IMPACT_CAPTION = "[^"]*approximate\.";', JS)
 
 
 def test_impact_table_header_cells_have_scope_col():
     body = js_function("renderImpact")
     assert body.count('el("th"') == 1  # every header cell is built in the one loop
-    created = body.index('var th = el("th", h)')
+    created = body.index('const th = el("th", h)')
     assert (
         created < body.index('th.setAttribute("scope", "col")') < body.index("head.appendChild(th)")
     )
@@ -65,14 +65,14 @@ def test_impact_table_header_cells_have_scope_col():
 
 def test_impact_table_wrapper_is_a_named_focusable_region():
     body = js_function("renderImpact")
-    wrap = body.index('var wrap = el("div", null, "table-wrap")')
+    wrap = body.index('const wrap = el("div", null, "table-wrap")')
     for attr in ('"tabindex", "0"', '"role", "region"', '"aria-labelledby", IMPACT_HEADING_ID'):
         pos = body.index("wrap.setAttribute(" + attr + ")")
         assert wrap < pos < body.index("wrap.appendChild(table)")
     # The name comes from the visible heading, which carries the matching id.
-    assert 'var IMPACT_HEADING_ID = "impact-h"' in JS
+    assert 'const IMPACT_HEADING_ID = "impact-h"' in JS
     assert "heading.id = IMPACT_HEADING_ID" in body
-    assert 'var heading = el("h3", "Impact table")' in body
+    assert 'const heading = el("h3", "Impact table")' in body
     assert body.index("heading.id") < body.index("if (!rows.length)")
     assert 'id="impact-h"' not in HTML  # created at render time only, so it stays unique
 

@@ -53,11 +53,11 @@ def test_id_references_integrity_in_html_and_js():
             assert target_id in declared_ids, f"fragment link '{href}' references nonexistent id"
 
     # 5. Dynamically created ids in app.js are documented and match
-    assert 'var IMPACT_HEADING_ID = "impact-h"' in JS
+    assert 'const IMPACT_HEADING_ID = "impact-h"' in JS
     assert 'wrap.setAttribute("aria-labelledby", IMPACT_HEADING_ID)' in JS
     assert "heading.id = IMPACT_HEADING_ID" in JS
-    assert 'var STATUS_ID = "status"' in JS
-    assert 'var CHAT_STATUS_ID = "chat-status"' in JS
+    assert 'const STATUS_ID = "status"' in JS
+    assert 'const CHAT_STATUS_ID = "chat-status"' in JS
     assert "status" in declared_ids
     assert "chat-status" in declared_ids
 

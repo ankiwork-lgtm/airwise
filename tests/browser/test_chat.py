@@ -24,7 +24,7 @@ INPUT_LABEL = "Your question"
 
 def _starters_from_source() -> list[str]:
     """Reads the STARTERS array from app.js so the test follows the list instead of copying it."""
-    match = re.search(r"var STARTERS = \[(.*?)\];", JS, re.S)
+    match = re.search(r"const STARTERS = \[(.*?)\];", JS, re.S)
     assert match, "STARTERS array not found in app.js"
     labels = re.findall(r'"((?:[^"\\]|\\.)*)"', match.group(1))
     assert len(labels) == 4

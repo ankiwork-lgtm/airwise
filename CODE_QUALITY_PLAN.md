@@ -150,20 +150,21 @@ This plan provides an incremental, risk-controlled roadmap to resolve all remain
 
 ---
 
-### Step 7: Modernize Frontend JavaScript (`public/app.js`) with Synchronized Test Updates
+### Step 7: Modernize Frontend JavaScript (`public/app.js`) with Synchronized Test Updates [COMPLETED]
 - **Goal**: Upgrade legacy ES5 `var` declarations to modern ES6 `const` and `let` while keeping all static string tests green.
 - **Target Files**:
   - `public/app.js`
   - `tests/test_static_aria.py`
-  - `tests/test_static_results.py`
+  - `tests/test_static_chat.py`
   - `tests/test_static_chat_ui.py`
+  - `tests/test_static_results.py`
+  - `tests/browser/test_chat.py`
 - **Actions**:
-  1. Convert constants (e.g. `STORAGE_KEY`, `GEO_TIMEOUT_MS`, `STATUS_ID`, `CHAT_STATUS_ID`) to `const`.
-  2. Convert local loop and mutation variables to `let` or `const`.
-  3. In `tests/test_static_aria.py`, `tests/test_static_results.py`, and `tests/test_static_chat_ui.py`, synchronize any string assertions matching `var CONSTANT_NAME` to `const CONSTANT_NAME`.
+  1. Converted all 126 `var` declarations in `public/app.js` to modern ES6 `const` (116 declarations) and block-scoped `let` (10 reassigned declarations).
+  2. Synchronized static and browser test string assertions matching `var CONSTANT_NAME` and `var variable` across `tests/test_static_aria.py`, `tests/test_static_chat.py`, `tests/test_static_chat_ui.py`, `tests/test_static_results.py`, and `tests/browser/test_chat.py`.
 - **Verification**:
   ```powershell
-  & .venv\Scripts\pytest.exe tests/test_static_*.py
+  & .venv\Scripts\pytest.exe -k "test_static"
   & .venv\Scripts\pytest.exe tests/browser -m browser
   ```
 

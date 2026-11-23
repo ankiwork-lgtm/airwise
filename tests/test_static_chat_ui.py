@@ -7,7 +7,7 @@ from tests.frontend import CSS, HTML, JS, js_function
 
 def test_chat_empty_input_is_announced_and_marked():
     assert 'id="chat-status"' in HTML
-    assert 'var CHAT_STATUS_ID = "chat-status"' in JS
+    assert 'const CHAT_STATUS_ID = "chat-status"' in JS
     build = js_function("buildChat")
     assert (
         'setStatus(byId(CHAT_STATUS_ID), "Please type a question first.", { error: true })' in build
@@ -87,7 +87,7 @@ def test_chat_network_error_does_not_touch_history():
 
 def test_chat_reply_for_an_old_plan_is_dropped_on_new_plan():
     # A reply still in flight when a new plan arrives must not reach the new conversation.
-    assert "var generation = chatGeneration;" in js_function("sendChat")
+    assert "const generation = chatGeneration;" in js_function("sendChat")
     success, rejected = _send_chat_handlers()
     assert "if (generation !== chatGeneration) { return; }" in success
     assert "if (generation !== chatGeneration) { return; }" in rejected
@@ -118,8 +118,8 @@ def test_starter_use_moves_focus_to_chat_input_before_hiding_the_row():
     )
     assert check, "focus must move to #chat-input only when the focus is inside #starters"
     hide = body.index("starters.hidden = true;")
-    assert 'var starters = byId("starters");' in body
-    assert 'var input = byId("chat-input");' in body
+    assert 'const starters = byId("starters");' in body
+    assert 'const input = byId("chat-input");' in body
     # Order: early-return guards, focus move, then hide. A rejected call changes nothing.
     assert guard < check.start() < hide
     assert body.count("focusControl(") == 2

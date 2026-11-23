@@ -56,16 +56,16 @@
    * @property {string[]} [fields]
    */
 
-  var STORAGE_KEY = "airwise.profile";
-  var GEO_TIMEOUT_MS = 10000;
-  var FALLBACK_CITY = "My location";
-  var STATUS_ID = "status";
-  var CHAT_STATUS_ID = "chat-status";
-  var MAX_CITY_LENGTH = 100;
-  var PCT_ROUNDING = 10;  // one decimal place
+  const STORAGE_KEY = "airwise.profile";
+  const GEO_TIMEOUT_MS = 10000;
+  const FALLBACK_CITY = "My location";
+  const STATUS_ID = "status";
+  const CHAT_STATUS_ID = "chat-status";
+  const MAX_CITY_LENGTH = 100;
+  const PCT_ROUNDING = 10;  // one decimal place
 
-  var YES_NO = [["yes", "Yes"], ["no", "No"]];
-  var FIELDS = [
+  const YES_NO = [["yes", "Yes"], ["no", "No"]];
+  const FIELDS = [
     { name: "kids", label: "Children present", type: "bool", options: YES_NO },
     { name: "elderly", label: "Elderly person present", type: "bool", options: YES_NO },
     { name: "respiratory", label: "Respiratory condition present", type: "bool", options: YES_NO },
@@ -81,7 +81,7 @@
       ["open_often", "Windows open often"], ["sometimes", "Sometimes open"], ["mostly_closed", "Mostly closed"]] }
   ];
 
-  var ERROR_MESSAGES = {
+  const ERROR_MESSAGES = {
     validation_error: "Some details were not accepted. Please fix the fields listed below.",
     payload_too_large: "The request was too large. Please shorten your input and try again.",
     rate_limited: "Too many requests. Please wait before trying again.",
@@ -90,7 +90,7 @@
     server_error: "Something went wrong on our side. Please try again later."
   };
 
-  var state = { coords: null, plan: null, reading: null, profile: null };
+  const state = { coords: null, plan: null, reading: null, profile: null };
 
   // The only element factory in this page. Text is always set via textContent.
   /**
@@ -101,7 +101,7 @@
    * @returns {HTMLElement}
    */
   function el(tag, text, cls) {
-    var node = document.createElement(tag);
+    const node = document.createElement(tag);
     if (text !== undefined && text !== null) { node.textContent = String(text); }
     if (cls) { node.className = cls; }
     return node;
@@ -124,20 +124,20 @@
    * Fill the form container with one labelled select per entry in FIELDS.
    */
   function buildForm() {
-    var host = byId("fields");
+    const host = byId("fields");
     FIELDS.forEach(function (f) {
-      var wrap = el("div");
-      var label = el("label", f.label);
+      const wrap = el("div");
+      const label = el("label", f.label);
       label.htmlFor = "f-" + f.name;
-      var select = el("select");
+      const select = el("select");
       select.id = "f-" + f.name;
       select.name = f.name;
       select.required = true;
-      var blank = el("option", "Select...");
+      const blank = el("option", "Select...");
       blank.value = "";
       select.appendChild(blank);
       f.options.forEach(function (o) {
-        var opt = el("option", o[1]);
+        const opt = el("option", o[1]);
         opt.value = o[0];
         select.appendChild(opt);
       });
@@ -152,9 +152,9 @@
    * @returns {Profile}
    */
   function readProfile() {
-    var p = { city: byId("city").value.trim() };
+    const p = { city: byId("city").value.trim() };
     FIELDS.forEach(function (f) {
-      var v = byId("f-" + f.name).value;
+      const v = byId("f-" + f.name).value;
       if (f.type === "bool") { p[f.name] = v === "yes" ? true : (v === "no" ? false : null); }
       else { p[f.name] = v; }
     });
@@ -168,7 +168,7 @@
   function fillForm(p) {
     byId("city").value = p.city;
     FIELDS.forEach(function (f) {
-      var v = p[f.name];
+      const v = p[f.name];
       byId("f-" + f.name).value = f.type === "bool" ? (v ? "yes" : "no") : v;
     });
   }
@@ -189,14 +189,14 @@
    */
   function isValidProfile(p) {
     if (!p || typeof p !== "object" || Array.isArray(p)) { return false; }
-    var keys = Object.keys(p);
+    const keys = Object.keys(p);
     if (keys.length !== FIELDS.length + 1) { return false; }
     if (typeof p.city !== "string") { return false; }
-    var city = p.city.trim();
+    const city = p.city.trim();
     if (city.length < 1 || city.length > MAX_CITY_LENGTH) { return false; }
     return FIELDS.every(function (f) {
       if (!Object.prototype.hasOwnProperty.call(p, f.name)) { return false; }
-      var v = p[f.name];
+      const v = p[f.name];
       if (f.type === "bool") { return typeof v === "boolean"; }
       return typeof v === "string" && f.options.some(function (o) { return o[0] === v; });
     });
@@ -209,12 +209,12 @@
    * @returns {Array<{id: string, label: string}>}
    */
   function invalidFields(p) {
-    var bad = [];
-    var city = typeof p.city === "string" ? p.city.trim() : "";
+    const bad = [];
+    const city = typeof p.city === "string" ? p.city.trim() : "";
     if (city.length < 1 || city.length > MAX_CITY_LENGTH) { bad.push({ id: "city", label: "City" }); }
     FIELDS.forEach(function (f) {
-      var v = p[f.name];
-      var ok = f.type === "bool" ? typeof v === "boolean"
+      const v = p[f.name];
+      const ok = f.type === "bool" ? typeof v === "boolean"
         : (typeof v === "string" && f.options.some(function (o) { return o[0] === v; }));
       if (!ok) { bad.push({ id: "f-" + f.name, label: f.label }); }
     });
@@ -246,9 +246,9 @@
    * @returns {?string} The control id, or null when the name has no control.
    */
   function controlIdForApiField(name) {
-    var key = String(name).split(".").pop();
+    const key = String(name).split(".").pop();
     if (key === "city") { return "city"; }
-    var found = FIELDS.some(function (f) { return f.name === key; });
+    const found = FIELDS.some(function (f) { return f.name === key; });
     return found ? "f-" + key : null;
   }
 
@@ -269,7 +269,7 @@
    */
   function markInvalid(control, statusId) {
     control.setAttribute("aria-invalid", "true");
-    var cur = tokens(control, "aria-describedby");
+    const cur = tokens(control, "aria-describedby");
     if (cur.indexOf(statusId) < 0) { cur.push(statusId); }
     control.setAttribute("aria-describedby", cur.join(" "));
   }
@@ -281,7 +281,7 @@
    */
   function unmarkInvalid(control, statusId) {
     control.removeAttribute("aria-invalid");
-    var rest = tokens(control, "aria-describedby").filter(function (t) { return t !== statusId; });
+    const rest = tokens(control, "aria-describedby").filter(function (t) { return t !== statusId; });
     if (rest.length) { control.setAttribute("aria-describedby", rest.join(" ")); }
     else { control.removeAttribute("aria-describedby"); }
   }
@@ -291,7 +291,7 @@
    */
   function clearInvalidFields() {
     controlIds().forEach(function (id) {
-      var control = byId(id);
+      const control = byId(id);
       if (control) { unmarkInvalid(control, STATUS_ID); }
     });
   }
@@ -304,10 +304,10 @@
    * @returns {?HTMLElement} The first marked control in form order, or null.
    */
   function markInvalidIds(ids) {
-    var first = null;
+    let first = null;
     controlIds().forEach(function (id) {
       if (ids.indexOf(id) < 0) { return; }
-      var control = byId(id);
+      const control = byId(id);
       markInvalid(control, STATUS_ID);
       if (!first) { first = control; }
     });
@@ -321,9 +321,9 @@
    * @returns {?HTMLElement} The first marked control, or null.
    */
   function markApiFields(names) {
-    var ids = [];
+    const ids = [];
     names.forEach(function (n) {
-      var id = controlIdForApiField(n);
+      const id = controlIdForApiField(n);
       if (id) { ids.push(id); }
     });
     return markInvalidIds(ids);
@@ -343,7 +343,7 @@
    * @param {string} id
    */
   function revalidateControl(id) {
-    var stillBad = invalidFields(readProfile()).some(function (x) { return x.id === id; });
+    const stillBad = invalidFields(readProfile()).some(function (x) { return x.id === id; });
     if (!stillBad) { unmarkInvalid(byId(id), STATUS_ID); }
   }
 
@@ -368,10 +368,10 @@
    * @returns {?Profile}
    */
   function loadSaved() {
-    var raw = null;
+    let raw = null;
     try { raw = window.localStorage.getItem(STORAGE_KEY); } catch (e) { return null; }
     if (raw === null) { return null; }
-    var parsed = null;
+    let parsed = null;
     try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
     if (!isValidProfile(parsed)) { removeSaved(); return null; }
     return parsed;
@@ -399,7 +399,7 @@
     node.className = "status" + (opts.error ? " error" : "") + (opts.loading ? " loading" : "");
     if (message) { node.appendChild(el("span", message)); }
     if (opts.list && opts.list.length) {
-      var ul = el("ul");
+      const ul = el("ul");
       opts.list.forEach(function (item) { ul.appendChild(el("li", item)); });
       node.appendChild(ul);
     }
@@ -414,15 +414,15 @@
    * @returns {ErrorDetail}
    */
   function describeError(status, body, retryAfter) {
-    var err = body && body.error ? body.error : {};
-    var code = err.code || (status === 429 ? "rate_limited" : (status === 413 ? "payload_too_large" : "server_error"));
-    var message = ERROR_MESSAGES[code] || ERROR_MESSAGES.server_error;
-    var list = [];
+    const err = body && body.error ? body.error : {};
+    const code = err.code || (status === 429 ? "rate_limited" : (status === 413 ? "payload_too_large" : "server_error"));
+    let message = ERROR_MESSAGES[code] || ERROR_MESSAGES.server_error;
+    let list = [];
     if (code === "validation_error" && Array.isArray(err.fields)) {
       list = err.fields.map(function (x) { return String(x); });
     }
     if (code === "rate_limited") {
-      var secs = parseInt(retryAfter, 10);
+      const secs = parseInt(retryAfter, 10);
       if (isFinite(secs) && secs > 0) {
         message = "Too many requests. Please try again in " + secs + (secs === 1 ? " second." : " seconds.");
       }
@@ -441,15 +441,15 @@
     return fetch(path, options).then(function (res) {
       return res.json().catch(function () { return null; }).then(function (body) {
         if (!res.ok) {
-          var d = describeError(res.status, body, res.headers.get("Retry-After"));
-          var e = new Error(d.message);
+          const d = describeError(res.status, body, res.headers.get("Retry-After"));
+          const e = new Error(d.message);
           e.detail = d;
           throw e;
         }
         return body;
       });
     }, function () {
-      var e = new Error("Could not reach AirWise. Check your connection and try again.");
+      const e = new Error("Could not reach AirWise. Check your connection and try again.");
       e.detail = { message: e.message, list: [] };
       throw e;
     });
@@ -462,7 +462,7 @@
    * @returns {Promise<{plan: Plan, reading: Reading}>}
    */
   function postPlan(profile, coords) {
-    var payload = { profile: profile };
+    const payload = { profile: profile };
     if (coords) { payload.latitude = coords.latitude; payload.longitude = coords.longitude; }
     return callApi("/api/plan", {
       method: "POST",
@@ -487,15 +487,15 @@
    */
   function onGenerate(ev) {
     ev.preventDefault();
-    var status = byId("status");
-    var btn = byId("generate-btn");
-    var profile = readProfile();
+    const status = byId("status");
+    const btn = byId("generate-btn");
+    const profile = readProfile();
     if (state.coords && profile.city === "") {
       profile.city = FALLBACK_CITY;
       byId("city").value = FALLBACK_CITY;
     }
     if (!isValidProfile(profile)) {
-      var bad = invalidFields(profile);
+      const bad = invalidFields(profile);
       setStatus(status, "Please complete these fields:", { error: true, list: invalidFieldLabels(profile) });
       focusControl(markInvalidIds(bad.map(function (x) { return x.id; })));
       return;
@@ -531,15 +531,15 @@
    * Handle the location button: get device coordinates and look up the air reading.
    */
   function onUseLocation() {
-    var btn = byId("geo-btn");
-    var status = byId("geo-status");
-    var NO_LOCATION = "We could not get your location. Please enter a city name instead.";
+    const btn = byId("geo-btn");
+    const status = byId("geo-status");
+    const NO_LOCATION = "We could not get your location. Please enter a city name instead.";
     if (!navigator.geolocation) {
       setStatus(status, NO_LOCATION, { error: true });
       return;
     }
-    var settled = false;
-    var timer = null;
+    let settled = false;
+    let timer = null;
     btn.disabled = true;
     setStatus(status, "Finding your location...", { loading: true });
 
@@ -555,10 +555,10 @@
       if (settled) { return; }
       // A position arrived: the timeout must not cut off the AQI lookup that follows.
       clearTimeout(timer);
-      var coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+      const coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
       if (byId("city").value.trim() === "") { byId("city").value = FALLBACK_CITY; }
       setStatus(status, "Looking up air quality for your location...", { loading: true });
-      var q = "/api/aqi?lat=" + encodeURIComponent(coords.latitude) + "&lon=" + encodeURIComponent(coords.longitude);
+      const q = "/api/aqi?lat=" + encodeURIComponent(coords.latitude) + "&lon=" + encodeURIComponent(coords.longitude);
       callApi(q, { method: "GET" }).then(function (reading) {
         state.coords = coords;
         state.reading = reading;
@@ -575,13 +575,13 @@
   }
 
   // ---------- Result rendering (text only, via el()) ----------
-  var GRAP_LABEL = "indicative, not an official declaration";
-  var ESTIMATED_NOTICE = "This is an estimated typical winter value, not live data.";
-  var FALLBACK_NOTICE = "This plan is rule-based and not AI-personalized.";
-  var IMPACT_HEADING_ID = "impact-h";
-  var IMPACT_CAPTION = "Estimated exposure and CO2 reduction for each recommended action. Figures are approximate.";
-  var NO_ACTIONS = "No further actions apply.";
-  var SLOTS = [["morning", "Morning"], ["commute", "Commute"], ["midday", "Midday"], ["evening", "Evening"]];
+  const GRAP_LABEL = "indicative, not an official declaration";
+  const ESTIMATED_NOTICE = "This is an estimated typical winter value, not live data.";
+  const FALLBACK_NOTICE = "This plan is rule-based and not AI-personalized.";
+  const IMPACT_HEADING_ID = "impact-h";
+  const IMPACT_CAPTION = "Estimated exposure and CO2 reduction for each recommended action. Figures are approximate.";
+  const NO_ACTIONS = "No further actions apply.";
+  const SLOTS = [["morning", "Morning"], ["commute", "Commute"], ["midday", "Midday"], ["evening", "Evening"]];
 
   /**
    * Format a number with at most one decimal place.
@@ -590,7 +590,7 @@
    */
   function pct(n) { return String(Math.round(Number(n) * PCT_ROUNDING) / PCT_ROUNDING); }
 
-  var BAND_CLASS = {
+  const BAND_CLASS = {
     "Good": "band-good", "Satisfactory": "band-satisfactory", "Moderate": "band-moderate",
     "Poor": "band-poor", "Very Poor": "band-very-poor", "Severe": "band-severe"
   };
@@ -602,7 +602,7 @@
    * @returns {?string} Null when the value is not a valid date.
    */
   function formatObserved(iso) {
-    var d = new Date(iso);
+    const d = new Date(iso);
     if (isNaN(d.getTime())) { return null; }
     return d.toLocaleString(undefined, {
       day: "numeric", month: "short", year: "numeric",
@@ -617,10 +617,10 @@
    * @returns {HTMLElement}
    */
   function pmTile(label, value) {
-    var tile = el("div", null, "pm-tile");
+    const tile = el("div", null, "pm-tile");
     tile.setAttribute("role", "group");
     tile.appendChild(el("div", label, "pm-label"));
-    var num = el("div", null, "pm-value");
+    const num = el("div", null, "pm-value");
     if (value === null || value === undefined) {
       num.appendChild(el("span", "not available", "pm-na"));
       tile.setAttribute("aria-label", label + ": not available");
@@ -639,40 +639,40 @@
    * @returns {HTMLElement}
    */
   function renderAqiCard(reading) {
-    var card = el("div", null, "card aqi " + (BAND_CLASS[reading.band] || ""));
+    const card = el("div", null, "card aqi " + (BAND_CLASS[reading.band] || ""));
     card.appendChild(el("h2", "Air quality in " + reading.location_name));
-    var hero = el("div", null, "aqi-hero");
-    var badge = el("div", null, "aqi-badge");
+    const hero = el("div", null, "aqi-hero");
+    const badge = el("div", null, "aqi-badge");
     badge.appendChild(el("span", reading.aqi, "aqi-value"));
     badge.appendChild(el("span", "AQI", "aqi-unit"));
     hero.appendChild(badge);
-    var meta = el("div", null, "aqi-meta");
+    const meta = el("div", null, "aqi-meta");
     meta.appendChild(el("p", reading.band, "aqi-band"));
-    var grap = el("p", null, "grap");
-    var stage = reading.grap_stage === "none" ? "GRAP stage: none" : "GRAP stage: " + reading.grap_stage;
+    const grap = el("p", null, "grap");
+    const stage = reading.grap_stage === "none" ? "GRAP stage: none" : "GRAP stage: " + reading.grap_stage;
     grap.appendChild(el("span", stage, "grap-pill"));
     grap.appendChild(el("span", " (" + GRAP_LABEL + ")", "muted"));
     meta.appendChild(grap);
     hero.appendChild(meta);
     card.appendChild(hero);
-    var pm = el("div", null, "pm");
+    const pm = el("div", null, "pm");
     pm.appendChild(pmTile("PM2.5", reading.pm2_5));
     pm.appendChild(pmTile("PM10", reading.pm10));
     card.appendChild(pm);
-    var observed = typeof reading.observed_at === "string" ? formatObserved(reading.observed_at) : null;
+    const observed = typeof reading.observed_at === "string" ? formatObserved(reading.observed_at) : null;
     if (reading.source === "live" && observed) {
-      var when = el("p", null, "aqi-time muted");
+      const when = el("p", null, "aqi-time muted");
       when.appendChild(el("span", "Data as of "));
-      var t = el("time", observed);
+      const t = el("time", observed);
       t.setAttribute("datetime", reading.observed_at);
       when.appendChild(t);
       card.appendChild(when);
     }
 
     if (reading.source === "live" && typeof reading.source_url === "string" && reading.source_url.indexOf("https:") === 0) {
-      var src = el("p", null, "aqi-source muted");
+      const src = el("p", null, "aqi-source muted");
       src.appendChild(el("span", "Source: "));
-      var link = el("a", "Open-Meteo Air Quality API (opens in new tab)");
+      const link = el("a", "Open-Meteo Air Quality API (opens in new tab)");
       link.setAttribute("href", reading.source_url);
       link.setAttribute("target", "_blank");
       link.setAttribute("rel", "noopener noreferrer");
@@ -689,7 +689,7 @@
    * @returns {HTMLElement}
    */
   function renderItem(item) {
-    var li = el("li");
+    const li = el("li");
     li.appendChild(el("div", item.text, "item-text"));
     li.appendChild(el("div", "Why it matters: " + item.why_it_matters, "why"));
     return li;
@@ -702,9 +702,9 @@
    * @returns {HTMLElement}
    */
   function renderItemList(title, items) {
-    var box = el("div", null, "block");
+    const box = el("div", null, "block");
     box.appendChild(el("h3", title));
-    var ul = el("ul");
+    const ul = el("ul");
     items.forEach(function (it) { ul.appendChild(renderItem(it)); });
     box.appendChild(ul);
     return box;
@@ -716,8 +716,8 @@
    * @returns {HTMLElement}
    */
   function renderImpact(rows) {
-    var box = el("div", null, "block");
-    var heading = el("h3", "Impact table");
+    const box = el("div", null, "block");
+    const heading = el("h3", "Impact table");
     heading.id = IMPACT_HEADING_ID;  // one impact table per render, so the id is unique
     box.appendChild(heading);
     if (!rows.length) {
@@ -726,24 +726,24 @@
     }
     // The wrapper scrolls horizontally on narrow screens, so it must take keyboard
     // focus and expose a name for screen readers.
-    var wrap = el("div", null, "table-wrap");
+    const wrap = el("div", null, "table-wrap");
     wrap.setAttribute("tabindex", "0");
     wrap.setAttribute("role", "region");
     wrap.setAttribute("aria-labelledby", IMPACT_HEADING_ID);
-    var table = el("table");
+    const table = el("table");
     table.appendChild(el("caption", IMPACT_CAPTION, "muted"));
-    var head = el("tr");
+    const head = el("tr");
     ["Action", "Exposure reduction (approx.)", "CO2 saved (approx.)", "Basis", "Source"].forEach(function (h) {
-      var th = el("th", h);
+      const th = el("th", h);
       th.setAttribute("scope", "col");
       head.appendChild(th);
     });
-    var thead = el("thead");
+    const thead = el("thead");
     thead.appendChild(head);
     table.appendChild(thead);
-    var tbody = el("tbody");
+    const tbody = el("tbody");
     rows.forEach(function (r) {
-      var tr = el("tr");
+      const tr = el("tr");
       tr.appendChild(el("td", r.action));
       tr.appendChild(el("td", "\u2248 " + pct(r.exposure_reduction_pct) + "%"));
       tr.appendChild(el("td", "\u2248 " + pct(r.co2_kg_per_day) + " kg/day"));
@@ -764,7 +764,7 @@
    * @param {?Plan} plan
    */
   function renderResult(reading, plan) {
-    var host = byId("result-body");
+    const host = byId("result-body");
     clearNode(host);
     if (reading) {
       host.appendChild(renderAqiCard(reading));
@@ -774,30 +774,30 @@
     }
     if (plan) {
       if (plan.fallback) { host.appendChild(el("div", FALLBACK_NOTICE, "notice")); }
-      var score = el("div", null, "card score");
+      const score = el("div", null, "card score");
       score.appendChild(el("h2", "Exposure score"));
       score.appendChild(el("p", "\u2248 " + pct(plan.exposure_score) + "% estimated exposure reduction (approximate)"));
       host.appendChild(score);
-      var routine = el("div", null, "card");
+      const routine = el("div", null, "card");
       routine.appendChild(el("h2", "Daily routine"));
       SLOTS.forEach(function (s) { routine.appendChild(renderItemList(s[1], plan.routine[s[0]])); });
       host.appendChild(routine);
-      var more = el("div", null, "card");
+      const more = el("div", null, "card");
       more.appendChild(renderItemList("Indoor hacks", plan.indoor_hacks));
       more.appendChild(renderItemList("Sustainable swaps", plan.swaps));
       if (plan.vulnerable_note) {
-        var vn = el("div", null, "block");
+        const vn = el("div", null, "block");
         vn.appendChild(el("h3", "Vulnerable members"));
         vn.appendChild(el("p", plan.vulnerable_note));
         more.appendChild(vn);
       }
       host.appendChild(more);
-      var impact = el("div", null, "card");
+      const impact = el("div", null, "card");
       impact.appendChild(renderImpact(plan.impact_table));
       host.appendChild(impact);
     }
     // The heading names a plan, so it is shown only when a plan is rendered.
-    var heading = byId("result-h");
+    const heading = byId("result-h");
     heading.hidden = !plan;
     byId("result").hidden = false;
     // Only a rendered plan takes focus; the heading announces itself, so the
@@ -813,21 +813,21 @@
   });
 
   // ---------- Chat ----------
-  var STARTERS = [
+  const STARTERS = [
     "What should I do first today?",
     "Which action reduces my exposure the most?",
     "How can I keep my home air cleaner?",
     "Is it a good day to go outside?"
   ];
-  var MAX_HISTORY = 10;
-  var MAX_MESSAGE = 500;
-  var CHAT_FAILURE = "Sorry, I could not answer that right now. Please try again.";
+  const MAX_HISTORY = 10;
+  const MAX_MESSAGE = 500;
+  const CHAT_FAILURE = "Sorry, I could not answer that right now. Please try again.";
 
   // Chat state lives in JS variables only (plan, reading, profile are in `state`).
   // chatGeneration changes on every new plan, so a reply to an older plan is dropped.
-  var history = [];
-  var chatBusy = false;
-  var chatGeneration = 0;
+  let history = [];
+  let chatBusy = false;
+  let chatGeneration = 0;
 
   /**
    * Append a chat message to the history list.
@@ -836,11 +836,11 @@
    * @param {boolean} failed Whether the message reports a failure.
    */
   function addBubble(role, text, failed) {
-    var list = byId("chat-history");
-    var li = el("li", text, "bubble " + role + (failed ? " failed" : ""));
+    let list = byId("chat-history");
+    const li = el("li", text, "bubble " + role + (failed ? " failed" : ""));
     // Hidden speaker label for screen readers. Not stored in `history`, so the API never sees it.
     // Inserted before the li joins the list, so the live region announces one addition.
-    var speaker = role === "user" ? "You: " : (failed ? "AirWise (error): " : "AirWise: ");
+    const speaker = role === "user" ? "You: " : (failed ? "AirWise (error): " : "AirWise: ");
     li.insertBefore(el("span", speaker, "visually-hidden"), li.firstChild);
     list.appendChild(li);
     list.scrollTop = list.scrollHeight;
@@ -853,9 +853,9 @@
   function sendChat(message) {
     message = String(message).trim();
     if (chatBusy || !state.plan || message === "" || message.length > MAX_MESSAGE) { return; }
-    var input = byId("chat-input");
-    var send = byId("chat-send");
-    var starters = byId("starters");
+    const input = byId("chat-input");
+    const send = byId("chat-send");
+    const starters = byId("starters");
     // Hiding the row removes the focused starter button from the page, which would drop focus
     // to <body>. Move it to the chat input first, so a keyboard user can type a follow-up.
     if (starters.contains(document.activeElement)) { focusControl(input); }
@@ -867,8 +867,8 @@
     // A disabled button drops focus to <body>, so move it to the input first.
     if (document.activeElement === send) { focusControl(input); }
     send.disabled = true;
-    var generation = chatGeneration;
-    var payload = {
+    const generation = chatGeneration;
+    const payload = {
       message: message,
       history: history.slice(-MAX_HISTORY),
       plan: state.plan,
@@ -882,8 +882,8 @@
     }).then(function (data) {
       // The plan changed while this reply was in flight: it belongs to the old conversation.
       if (generation !== chatGeneration) { return; }
-      var failed = !data || data.failed === true || typeof data.reply !== "string" || data.reply === "";
-      var text = failed ? ((data && data.reply) || CHAT_FAILURE) : data.reply;
+      const failed = !data || data.failed === true || typeof data.reply !== "string" || data.reply === "";
+      const text = failed ? ((data && data.reply) || CHAT_FAILURE) : data.reply;
       addBubble("assistant", text, failed);
       // A failed reply is shown but kept out of `history`, so the canned failure text is never
       // sent back to the LLM as if the assistant had said it. The user's message is dropped too,
@@ -896,7 +896,7 @@
       }
     }, function (e) {
       if (generation !== chatGeneration) { return; }
-      var msg = e.detail && e.detail.message ? e.detail.message : CHAT_FAILURE;
+      const msg = e.detail && e.detail.message ? e.detail.message : CHAT_FAILURE;
       addBubble("assistant", msg, true);
       setStatus(byId(CHAT_STATUS_ID), msg, { error: true });
     }).then(function () {
@@ -910,16 +910,16 @@
    * Create the starter buttons and wire up the chat form.
    */
   function buildChat() {
-    var host = byId("starters");
+    const host = byId("starters");
     STARTERS.forEach(function (q) {
-      var b = el("button", q, "secondary");
+      const b = el("button", q, "secondary");
       b.type = "button";
       b.addEventListener("click", function () { sendChat(q); });
       host.appendChild(b);
     });
     byId("chat-form").addEventListener("submit", function (ev) {
       ev.preventDefault();
-      var input = byId("chat-input");
+      const input = byId("chat-input");
       unmarkInvalid(input, CHAT_STATUS_ID);
       if (input.value.trim() === "") {
         setStatus(byId(CHAT_STATUS_ID), "Please type a question first.", { error: true });
@@ -954,7 +954,7 @@
   function init() {
     buildForm();
     buildChat();
-    var saved = loadSaved();
+    const saved = loadSaved();
     if (saved) { fillForm(saved); }
     byId("profile-form").addEventListener("submit", onGenerate);
     byId("clear-btn").addEventListener("click", onClear);
@@ -963,7 +963,7 @@
       if (byId("city").value.trim() !== FALLBACK_CITY) { state.coords = null; }
     });
     controlIds().forEach(function (id) {
-      var control = byId(id);
+      const control = byId(id);
       control.addEventListener(control.tagName === "SELECT" ? "change" : "input", function () {
         revalidateControl(id);
       });
