@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import httpx
 from fastapi import FastAPI, Response
@@ -30,7 +30,12 @@ from airwise.routes import chat as chat_routes
 from airwise.routes import health as health_routes
 from airwise.routes import plan as plan_routes
 from airwise.routes.limits import rate_limit_check
-from airwise.services.llm import AnthropicClient, LLMClient, aclose_llm_client
+from airwise.services.llm import AnthropicClient, aclose_llm_client
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
+    from airwise.services.llm import LLMClient
 
 PUBLIC_DIR = Path(__file__).resolve().parent.parent / "public"
 INDEX_PATH = PUBLIC_DIR / "index.html"

@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
-from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from airwise.errors import AppError
 from airwise.middleware import SECURITY_HEADERS
+
+if TYPE_CHECKING:
+    from fastapi import FastAPI, Request
 
 logger = logging.getLogger("airwise")
 GENERIC_SERVER_ERROR_MESSAGE = "Internal server error."

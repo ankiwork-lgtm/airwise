@@ -133,15 +133,15 @@ This plan provides an incremental, risk-controlled roadmap to resolve all remain
 
 ---
 
-### Step 6: Import Hygiene with `TYPE_CHECKING` Guards
+### Step 6: Import Hygiene with `TYPE_CHECKING` Guards [COMPLETED]
 - **Goal**: Minimize circular import surface and reduce cold-start execution time by isolating type-only imports.
 - **Target Files**:
   - `airwise/handlers.py`
   - `airwise/main.py`
   - `airwise/services/llm.py`
 - **Actions**:
-  1. Wrap type-only imports (such as `AsyncIterator`, `Request`, `FastAPI` where only used in type positions) in `if TYPE_CHECKING:` blocks.
-  2. Use `from __future__ import annotations` (already enabled across files) to ensure postponed evaluation of annotations.
+  1. Wrapped type-only imports (`AsyncIterator`, `Request`, `FastAPI`, `LLMClient`, `AirReading`, `HouseholdProfile`, `ImpactRow`) in `if TYPE_CHECKING:` blocks.
+  2. Maintained `from __future__ import annotations` across all modified files for postponed evaluation of annotations.
 - **Verification**:
   ```powershell
   & .venv\Scripts\mypy.exe airwise

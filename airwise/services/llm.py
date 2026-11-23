@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import httpx
 
 from airwise.config import anthropic_api_key, anthropic_base_url, llm_model
-from airwise.models import AirReading, HouseholdProfile, ImpactRow
+
+if TYPE_CHECKING:
+    from airwise.models import AirReading, HouseholdProfile, ImpactRow
 
 ANTHROPIC_VERSION = "2023-06-01"
 MAX_OUTPUT_TOKENS = 2048
