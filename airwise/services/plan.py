@@ -5,6 +5,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import httpx
+from pydantic import ValidationError
+
 from airwise.config import Deadline, anthropic_api_key
 from airwise.models import (
     AirReading,
@@ -25,6 +28,7 @@ from airwise.services.impact import ImpactResult, compute_impact
 from airwise.services.llm import (
     PLAN_JSON_SCHEMA,
     LLMClient,
+    LLMUnavailable,
     build_plan_user_prompt,
     build_system_prompt,
 )
@@ -141,8 +145,14 @@ async def generate_plan(
             fallback=False,
             estimated=reading.source == "estimated",
         )
-    # Deliberately broad: any LLM error, timeout, or invalid output means fallback.
-    except Exception as exc:
+    except (
+        LLMUnavailable,
+        httpx.HTTPError,
+        ValidationError,
+        TimeoutError,
+        RuntimeError,
+        ValueError,
+    ) as exc:
         # Log only the class: the message can echo prompt or provider response text.
         logger.warning(
             "Plan generation fell back to deterministic rules: %s",

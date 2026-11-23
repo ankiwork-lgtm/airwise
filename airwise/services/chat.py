@@ -6,9 +6,17 @@ import logging
 import re
 from typing import Any
 
+import httpx
+from pydantic import ValidationError
+
 from airwise.config import Deadline, anthropic_api_key
 from airwise.models import ChatReply, ChatRequest, LLMChat
-from airwise.services.llm import LLMClient, build_chat_user_prompt, build_system_prompt
+from airwise.services.llm import (
+    LLMClient,
+    LLMUnavailable,
+    build_chat_user_prompt,
+    build_system_prompt,
+)
 
 logger = logging.getLogger("airwise")
 
@@ -119,7 +127,14 @@ async def answer(req: ChatRequest, *, llm: LLMClient, deadline: Deadline) -> Cha
             head = reply[: 2000 - len(NOT_MEDICAL_ADVICE_NOTE) - 1].rstrip()
             reply = f"{head} {NOT_MEDICAL_ADVICE_NOTE}"
         return ChatReply(reply=reply, failed=False)
-    except Exception as exc:  # deliberately broad: any LLM error, timeout, or invalid output
+    except (
+        LLMUnavailable,
+        httpx.HTTPError,
+        ValidationError,
+        TimeoutError,
+        RuntimeError,
+        ValueError,
+    ) as exc:
         # Log only the class and upstream status: the message can echo provider response text.
         error_type = type(exc).__name__
         upstream_status = getattr(exc, "status_code", None)

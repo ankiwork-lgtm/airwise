@@ -87,7 +87,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         ):
             try:
                 await close()
-            except Exception as exc:
+            except (httpx.HTTPError, OSError, RuntimeError, ValueError) as exc:
                 logger.warning("Failed to close %s client: %s", name, type(exc).__name__)
 
 

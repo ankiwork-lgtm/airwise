@@ -114,7 +114,17 @@ class AnthropicClient:
                 f"LLM call failed (HTTPStatusError {exc.response.status_code}): {detail}",
                 status_code=exc.response.status_code,
             ) from None
-        except Exception as exc:  # timeout, bad JSON: report the class only
+        except (
+            httpx.HTTPError,
+            TimeoutError,
+            json.JSONDecodeError,
+            KeyError,
+            IndexError,
+            StopIteration,
+            TypeError,
+            ValueError,
+            RuntimeError,
+        ) as exc:
             raise LLMUnavailable(f"LLM call failed ({type(exc).__name__}).") from None
         if not isinstance(data, dict):
             raise LLMUnavailable("LLM returned a non-object response.")

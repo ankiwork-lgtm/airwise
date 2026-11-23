@@ -60,7 +60,8 @@ This plan provides an incremental, risk-controlled roadmap to resolve all remain
 
 ---
 
-### Step 3: Replace Broad `except Exception:` with Specific Exceptions
+### Step 3: Replace Broad `except Exception:` with Specific Exceptions [COMPLETED]
+- **Status**: Done (commit-ready)
 - **Goal**: Eliminate `BLE001` (blind except) to ensure unexpected bugs or loop cancellations are not swallowed silently.
 - **Target Files**:
   - `airwise/services/plan.py`
