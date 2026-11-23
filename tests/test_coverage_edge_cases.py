@@ -50,7 +50,10 @@ async def test_validation_error_handler_deduplicates_same_field():
             {"type": "string_too_short", "loc": ("body", "profile", "city"), "msg": "err2"},
         ]
     )
-    resp = await validation_error_handler(None, exc)  # type: ignore[arg-type]
+    from starlette.requests import Request as StarletteRequest
+
+    scope = {"type": "http", "method": "GET", "path": "/"}
+    resp = await validation_error_handler(StarletteRequest(scope), exc)
     data = json.loads(resp.body.decode("utf-8"))
     assert data["error"]["fields"] == ["profile.city"]
 

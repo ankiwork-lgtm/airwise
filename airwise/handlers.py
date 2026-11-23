@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -30,21 +30,23 @@ def _field_path(loc: tuple[Any, ...]) -> str:
     return ".".join(parts) if parts else "body"
 
 
-async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
+async def app_error_handler(request: Request, exc: Exception) -> JSONResponse:
     """Render an ``AppError`` with its own status, code, fields and headers."""
+    err = cast(AppError, exc)
     return JSONResponse(
-        status_code=exc.status,
-        content=error_body(exc.code, exc.message, exc.fields),
-        headers=exc.headers or None,
+        status_code=err.status,
+        content=error_body(err.code, err.message, err.fields),
+        headers=err.headers or None,
     )
 
 
-async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+async def validation_error_handler(request: Request, exc: Exception) -> JSONResponse:
     """Render a request validation error, listing field names only."""
+    err = cast(RequestValidationError, exc)
     # Build fields from `loc` only. Never echo `input` or `msg` values.
     fields: list[str] = []
-    for err in exc.errors():
-        path = _field_path(tuple(err.get("loc", ())))
+    for error in err.errors():
+        path = _field_path(tuple(error.get("loc", ())))
         if path not in fields:
             fields.append(path)
     return JSONResponse(
@@ -68,11 +70,6 @@ async def unexpected_error_handler(request: Request, exc: Exception) -> JSONResp
 
 def register_exception_handlers(app: FastAPI) -> None:
     """Install the handlers above on ``app``."""
-    # Starlette types handlers as (Request, Exception) but only calls each one for the
-    # exception class it is registered with, so the narrower `exc` type is safe.
-    app.add_exception_handler(AppError, app_error_handler)  # type: ignore[arg-type]
-    app.add_exception_handler(
-        RequestValidationError,
-        validation_error_handler,  # type: ignore[arg-type]
-    )
+    app.add_exception_handler(AppError, app_error_handler)
+    app.add_exception_handler(RequestValidationError, validation_error_handler)
     app.add_exception_handler(Exception, unexpected_error_handler)
