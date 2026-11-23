@@ -9,7 +9,7 @@ import httpx
 from fastapi import Depends, FastAPI, Request
 
 from airwise.config import Deadline
-from airwise.models import PlanRequest, PlanResponse
+from airwise.models import ErrorResponse, PlanRequest, PlanResponse
 from airwise.routes.limits import LimitCheck
 from airwise.services import aqi as aqi_service
 from airwise.services.llm import LLMClient
@@ -25,7 +25,25 @@ def register_routes(
 ) -> None:
     """Register the route; the dependency functions stay in ``main`` so tests can override them."""
 
-    @app.post("/api/plan", response_model=PlanResponse)
+    @app.post(
+        "/api/plan",
+        response_model=PlanResponse,
+        summary="Generate personalized routine plan",
+        description="Generate daily routine and impact table tailored to household profile.",
+        tags=["Plan Generation"],
+        responses={
+            413: {"model": ErrorResponse, "description": "Request body is too large (> 64 KB)."},
+            422: {
+                "model": ErrorResponse,
+                "description": "Validation failure for profile or coordinates.",
+            },
+            429: {
+                "model": ErrorResponse,
+                "description": "Rate limit exceeded (10 requests/minute).",
+            },
+            502: {"model": ErrorResponse, "description": "Location lookup unavailable."},
+        },
+    )
     async def post_plan(
         body: PlanRequest,
         request: Request,

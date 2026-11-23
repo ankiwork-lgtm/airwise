@@ -34,7 +34,8 @@ This plan provides an incremental, risk-controlled roadmap to resolve all remain
 
 ---
 
-### Step 2: Enrich OpenAPI Route Metadata & Error Responses
+### Step 2: Enrich OpenAPI Route Metadata & Error Responses [COMPLETED]
+- **Status**: Done (commit-ready)
 - **Goal**: Enable self-documenting Swagger/ReDoc schemas with complete tags, summaries, descriptions, and error status models.
 - **Target Files**:
   - `airwise/routes/aqi.py`

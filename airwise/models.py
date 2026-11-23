@@ -321,3 +321,21 @@ class LLMChat(BaseModel):
     discusses_health: bool = Field(
         description="Whether the reply gives health-related content needing a disclaimer."
     )
+
+
+class ErrorBody(BaseModel):
+    """The JSON error structure: code, message, and flagged fields."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    code: str = Field(description="Machine-readable error identifier.")
+    message: str = Field(description="Human-readable explanation of the error.")
+    fields: list[str] = Field(default_factory=list, description="List of invalid field paths.")
+
+
+class ErrorResponse(BaseModel):
+    """Standard error response envelope."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    error: ErrorBody = Field(description="Error details.")

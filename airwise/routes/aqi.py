@@ -9,7 +9,7 @@ import httpx
 from fastapi import Depends, FastAPI, Query, Request
 
 from airwise.errors import ValidationFailure
-from airwise.models import AirReading
+from airwise.models import AirReading, ErrorResponse
 from airwise.routes.limits import LimitCheck
 from airwise.services import aqi as aqi_service
 
@@ -35,7 +35,28 @@ def register_routes(
 ) -> None:
     """Register the route; ``get_http_client`` stays in ``main`` so tests can override it."""
 
-    @app.get("/api/aqi", response_model=AirReading)
+    @app.get(
+        "/api/aqi",
+        response_model=AirReading,
+        summary="Lookup current air quality",
+        description="Return air reading and CPCB band for a city or coordinates.",
+        tags=["Air Quality"],
+        responses={
+            404: {"model": ErrorResponse, "description": "City not found."},
+            422: {
+                "model": ErrorResponse,
+                "description": "Invalid city or coordinate query parameters.",
+            },
+            429: {
+                "model": ErrorResponse,
+                "description": "Rate limit exceeded (30 requests/minute).",
+            },
+            502: {
+                "model": ErrorResponse,
+                "description": "Upstream air quality lookup unavailable.",
+            },
+        },
+    )
     async def get_aqi(
         request: Request,
         city: str | None = None,
